@@ -3053,10 +3053,10 @@ methodmap CClotBody
 	
 	public Address GetModelPtr()
 	{
-		//const int offset = FindSendPropInfo("CBaseAnimating", "m_flFadeScale ") + 28;
+		int offset = FindSendPropInfo("CBaseAnimating", "m_flFadeScale ") + 28;
 		
 		if(IsValidEntity(this.index)) {
-			return view_as<Address>(GetEntData(this.index, 283 * 4));
+			return view_as<Address>(GetEntData(this.index, offset));
 		}
 		
 		return Address_Null;
