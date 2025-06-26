@@ -123,7 +123,7 @@ static char SkyNameRestore[64];
 static StringMap g_AllocPooledStringCache;
 
 static int Gave_Ammo_Supply;
-static int VotedFor[MAXTF2PLAYERS];
+static int VotedFor[MAXPLAYERS];
 static float VoteEndTime;
 static float f_ZombieAntiDelaySpeedUp;
 static int i_ZombieAntiDelaySpeedUp;
@@ -143,6 +143,9 @@ static float Freeplay_TimeCash;
 static float Freeplay_CashTimeLeft;
 static float Freeplay_TimeExp;
 static float Freeplay_ExpTimeLeft;
+
+static int RelayCurrentRound = -1;
+static float OverrideScalingManually;
 
 public Action Waves_ProgressTimer(Handle timer)
 {
@@ -249,7 +252,7 @@ float MinibossScalingReturn()
 }
 public Action NpcEnemyAliveLimit(int client, int args)
 {
-	PrintToConsoleAll("EnemyNpcAlive %i | EnemyNpcAliveStatic %i",EnemyNpcAlive, EnemyNpcAliveStatic);
+	ReplyToCommand(client, "EnemyNpcAlive %i | EnemyNpcAliveStatic %i",EnemyNpcAlive, EnemyNpcAliveStatic);
 	return Plugin_Handled;
 }
 
@@ -266,6 +269,7 @@ public Action Waves_SetWaveCmd(int client, int args)
 	char buffer[12];
 	GetCmdArgString(buffer, sizeof(buffer));
 	CurrentRound = StringToInt(buffer);
+	RelayCurrentRound = CurrentRound;
 	CurrentWave = -1;
 	Waves_Progress();
 	return Plugin_Handled;
@@ -567,7 +571,6 @@ void Waves_SetupVote(KeyValues map, bool modifierOnly = false)
 		Cooldown = 0.0;
 		delete Voting;
 	}
-
 	delete VotingMods;
 	
 	KeyValues kv = zr_ignoremapconfig.BoolValue ? null : map;
@@ -715,7 +718,7 @@ void Waves_SetupVote(KeyValues map, bool modifierOnly = false)
 			if(modifierOnly)
 			{
 				int choosenLevel = 0;
-				int choosen = -1;
+				int choosen = 0; //Standart.
 				int AverageLevel = Waves_AverageLevelGet(100);
 				int length = VotingMods.Length;
 				for(int i; i < length; i++)
@@ -728,8 +731,8 @@ void Waves_SetupVote(KeyValues map, bool modifierOnly = false)
 					if(level < 10)
 						level = 10;
 					
-					level += RoundFloat(level * multi);
-					if(AverageLevel > level && level > choosenLevel)
+					level += RoundToNearest(level * multi);
+					if(AverageLevel >= level && level > choosenLevel)
 					{
 						choosen = i;
 						choosenLevel = level;
@@ -924,7 +927,7 @@ bool Waves_GetMiniBoss(MiniBoss boss)
 		}
 	}
 
-	level /= 4;
+	level /= 3;
 	if(level < 1)
 		return false;
 
@@ -991,6 +994,7 @@ void Waves_SetupWaves(KeyValues kv, bool start)
 	
 	CurrentRound = 0;
 	CurrentWave = -1;
+	RelayCurrentRound = 0;
 	
 	Waves_ClearWaves();
 	Waves_ResetCashGiveWaveEnd();
@@ -1006,7 +1010,7 @@ void Waves_SetupWaves(KeyValues kv, bool start)
 	ResourceRegenMulti = kv.GetFloat("resourceregen", 1.0);
 	Barracks_InstaResearchEverything = view_as<bool>(kv.GetNum("full_research"));
 	StartCash = kv.GetNum("cash", StartCash);
-	float OverrideScalingManually = kv.GetFloat("miniboss_scaling", 0.0);
+	OverrideScalingManually = kv.GetFloat("miniboss_scaling", 0.0);
 
 	int objective = GetObjectiveResource();
 	if(objective != -1)
@@ -1200,12 +1204,19 @@ void Waves_SetupWaves(KeyValues kv, bool start)
 	} while(kv.GotoNextKey());
 
 	int waves = Rounds.Length;
-	if(waves > 1)	//incase some wavetype has only 1 waves 
-		waves-=1;	//this makes it scale cleanly on fastmode. since Rounds.Length gets the wave amount PLUS 1. so 40 waves is 41, 60 is 61, etc.
-	//if we are above 60 waves, we dont change it from 1.0, i.e. it cant go lower!
-	MinibossScalingHandle = (60.0 / float(waves));
-	if(MinibossScalingHandle <= 1.0)
+	if(waves > 58 || waves < 29)
+	{
+		if(waves > 1)	//incase some wavetype has only 1 waves 
+			waves--;	//this makes it scale cleanly on fastmode. since Rounds.Length gets the wave amount PLUS 1. so 40 waves is 41, 60 is 61, etc.
+		//if we are above 40 waves, we dont change it from 1.0, i.e. it cant go lower!
+		MinibossScalingHandle = (40.0 / float(waves));
+		if(MinibossScalingHandle <= 1.0)
+			MinibossScalingHandle = 1.0;
+	}
+	else
+	{
 		MinibossScalingHandle = 1.0;
+	}
 
 	if(OverrideScalingManually != 0.0)
 		MinibossScalingHandle = OverrideScalingManually;
@@ -1391,6 +1402,8 @@ void Waves_RoundStart(bool event = false)
 				TF2_RegeneratePlayer(client);
 		}
 	}
+	if(CvarInfiniteCash.BoolValue)
+		CurrentCash = 999999;
 
 	if(Construction_Mode())
 	{
@@ -1410,8 +1423,10 @@ void Waves_RoundEnd()
 	InSetup = true;
 //	InFreeplay = false;
 	CurrentRound = 0;
+	RelayCurrentRound = 0;
 	CurrentWave = -1;
 	Medival_Difficulty_Level = 0.0; //make sure to set it to 0 othrerwise waves will become impossible
+	Medival_Difficulty_Level_NotMath = 0;
 
 	if(Rogue_Mode() || Construction_Mode())
 		delete Rounds;
@@ -1437,6 +1452,13 @@ public Action Waves_RoundStartTimer(Handle timer)
 		}
 		
 	}
+	return Plugin_Continue;
+}
+
+public Action Waves_AllowVoting(Handle timer)
+{
+	Waves_SetReadyStatus(1);
+	SPrintToChatAll("You may now ready up.");
 	return Plugin_Continue;
 }
 
@@ -1506,7 +1528,7 @@ public Action Waves_EndVote(Handle timer, float time)
 					VoteEndTime = GetGameTime() + 30.0;
 					CreateTimer(30.0, Waves_EndVote, _, TIMER_FLAG_NO_MAPCHANGE);
 					PrintHintTextToAll("Vote for the top %d options!", list.Length);
-					PrintToChatAll("Vote for the top %d options!", list.Length);
+					SPrintToChatAll("Vote for the top %d options!", list.Length);
 					Waves_SetReadyStatus(2);
 					return Plugin_Continue;
 				}
@@ -1587,7 +1609,7 @@ public Action Waves_EndVote(Handle timer, float time)
 					CreateTimer(duration, Waves_EndVote, _, TIMER_FLAG_NO_MAPCHANGE);
 
 					PrintHintTextToAll("Vote for the wave modifier!");
-					PrintToChatAll("Vote for the wave modifier!");
+					SPrintToChatAll("Vote for the wave modifier!");
 				}
 				else
 				{
@@ -1610,8 +1632,9 @@ public Action Waves_EndVote(Handle timer, float time)
 					float multi = float(vote.Level) / 1000.0;
 
 					int level = WaveLevel;
-					if(level < 10)
-						level = 10;
+					if(level < 20) 
+						level = 20;
+					//assume 20 is the minimum.
 					
 					WaveLevel += RoundFloat(level * multi);
 
@@ -1722,7 +1745,7 @@ void Waves_Progress(bool donotAdvanceRound = false)
 			float WaitingTimeGive = wave.EnemyData.WaitingTimeGive;
 			if(!LastMann && WaitingTimeGive > 0.0)
 			{
-				PrintToChatAll("You were given extra %.1f seconds to prepare.",WaitingTimeGive);
+				SPrintToChatAll("You were given extra %.1f seconds to prepare.",WaitingTimeGive);
 				GiveProgressDelay(WaitingTimeGive);
 				f_DelaySpawnsForVariousReasons = GetGameTime() + WaitingTimeGive;
 				SpawnTimer(WaitingTimeGive);
@@ -1734,14 +1757,14 @@ void Waves_Progress(bool donotAdvanceRound = false)
 				{
 					if(LastMann)
 					{
-						PrintToChatAll("You were given extra 45 seconds to prepare for the raidboss... Get ready.");
+						SPrintToChatAll("You were given extra 45 seconds to prepare for the raidboss... Get ready.");
 						GiveProgressDelay(45.0);
 						f_DelaySpawnsForVariousReasons = GetGameTime() + 45.0;
 						SpawnTimer(45.0);
 					}
 					else if(WaitingTimeGive <= 0.0)
 					{
-						PrintToChatAll("You were given extra 30 seconds to prepare for the raidboss... Get ready.");
+						SPrintToChatAll("You were given extra 30 seconds to prepare for the raidboss... Get ready.");
 						GiveProgressDelay(30.0);
 						f_DelaySpawnsForVariousReasons = GetGameTime() + 30.0;
 						SpawnTimer(30.0);
@@ -1828,10 +1851,6 @@ void Waves_Progress(bool donotAdvanceRound = false)
 				int Tempomary_Health = RoundToNearest(float(wave.EnemyData.Health) * multiBoss);
 				wave.EnemyData.Health = Tempomary_Health;
 			}
-			else if(MultiGlobalHealth > 1.0)
-			{
-				wave.EnemyData.Health = RoundToNearest(float(wave.EnemyData.Health) * MultiGlobalHealth);
-			}
 		
 			for(int i; i<count; i++)
 			{
@@ -1886,11 +1905,36 @@ void Waves_Progress(bool donotAdvanceRound = false)
 			Spawners_Timer();
 			if(CurrentRound != length)
 			{
-				char ExecuteRelayThings[255];
-				//do not during freeplay.
-				FormatEx(ExecuteRelayThings, sizeof(ExecuteRelayThings), "zr_wavefinish_wave_%i",CurrentRound);
+				char ExecuteRelayThings[64];
+
+				// 60 Wave Scaling
+				int ScalingDoWavesDone = CurrentRound;
+				if(OverrideScalingManually != 0.0)
+				{
+					ScalingDoWavesDone = RoundToFloor(float(CurrentRound) * OverrideScalingManually);
+				}
+				else if(length < 59)
+				{
+					ScalingDoWavesDone = RoundToFloor(float(CurrentRound) * (60.001 / float(length - 1)));
+				}
+				
+				for(; RelayCurrentRound < ScalingDoWavesDone ; RelayCurrentRound++)
+				{
+					//old logic
+					FormatEx(ExecuteRelayThings, sizeof(ExecuteRelayThings), "zr_wavefinish_wave_%d", RelayCurrentRound + 1);
+					ExcuteRelay(ExecuteRelayThings);
+				}
+
+				// No Scaling
+				FormatEx(ExecuteRelayThings, sizeof(ExecuteRelayThings), "zr_waveend_%d", CurrentRound);
 				ExcuteRelay(ExecuteRelayThings);
 			}
+
+			bool wasEmptyWave = !round.Waves.Length;
+			
+			if(!wasEmptyWave)
+				Native_OnWaveEnd();
+
 			RequestFrames(StopMapMusicAll, 60);
 			
 			Waves_ClearWaves();
@@ -1982,8 +2026,6 @@ void Waves_Progress(bool donotAdvanceRound = false)
 					}
 				}
 			}
-
-			bool wasEmptyWave = !round.Waves.Length;
 			
 			// Above is the round that just ended
 			Rounds.GetArray(CurrentRound, round);
@@ -2083,13 +2125,13 @@ void Waves_Progress(bool donotAdvanceRound = false)
 				Citizen_SpawnAtPoint();
 				CPrintToChatAll("{gray}Barney: {default}Hey! We came late to assist! Got a friend too!");
 			}
-			else if(CurrentRound == (RoundToNearest(11.0 * (1.0 / MinibossScalingReturn()))) && !round.NoMiniboss)
+			else if(CurrentRound == (RoundToNearest(8.0 * (1.0 / MinibossScalingReturn()))) && !round.NoMiniboss)
 			{
 				panzer_spawn = true;
 				panzer_sound = true;
 				panzer_chance = 10;
 			}
-			else if((CurrentRound > RoundToNearest(11.0 * (1.0 / MinibossScalingReturn())) && round.Setup <= 30.0 && !round.NoMiniboss))
+			else if((CurrentRound > RoundToNearest(8.0 * (1.0 / MinibossScalingReturn())) && round.Setup <= 30.0 && !round.NoMiniboss))
 			{
 				bool chance = (panzer_chance == 10 ? false : !GetRandomInt(0, panzer_chance));
 				if(panzer_chance != 10)
@@ -2121,6 +2163,26 @@ void Waves_Progress(bool donotAdvanceRound = false)
 			}
 			
 			bool wasLastMann = (LastMann && EntRefToEntIndex(RaidBossActive) == -1);
+			bool GiveBreakForPlayers = false;
+			int PlayersOnServerLeft = CountPlayersOnRed(0);
+			int PlayersaliveLeft = CountPlayersOnRed(1);
+			if(PlayersOnServerLeft > 20)
+			{
+				PlayersOnServerLeft = 20;
+				//its capped at a certain amount, cus if like 15 people are left alive in a 40 player server, 
+				//its still fine, 20 is the cap imo.
+			}
+			if(CountPlayersOnRed(0) > 4)
+			{
+				//only do this above 4 players.
+				if(float(PlayersOnServerLeft) * 0.38 >= (float(PlayersaliveLeft)))
+				{
+					//make it so if too many players died, itll assume the base is entirely dead, 
+					//nothing is left, and only a few remain
+					//This we give them a small break to rebuild, so this doesnt repeat.
+					GiveBreakForPlayers = true;
+				}
+			}
 			//if(!wasEmptyWave)
 			{
 				for(int client=1; client<=MaxClients; client++)
@@ -2358,7 +2420,7 @@ void Waves_Progress(bool donotAdvanceRound = false)
 						}
 						else
 						{
-							for (int client = 0; client < MaxClients; client++)
+							for (int client = 1; client <= MaxClients; client++)
 							{
 								if(IsValidClient(client) && GetClientTeam(client) == 2)
 								{
@@ -2415,7 +2477,15 @@ void Waves_Progress(bool donotAdvanceRound = false)
 					{
 						AlreadyWaitingSet(true);
 					}
-					Waves_SetReadyStatus(1);
+					if(EnableSilentMode)
+					{
+						Waves_SetReadyStatus(2);
+						//wait a minimum of 30 seconds when theres too many players.
+						SPrintToChatAll("You cannot ready up for 30 seconds.");
+						CreateTimer(30.0, Waves_AllowVoting, _, TIMER_FLAG_NO_MAPCHANGE);
+					}
+					else
+						Waves_SetReadyStatus(1);
 				}
 				else
 				{
@@ -2430,33 +2500,45 @@ void Waves_Progress(bool donotAdvanceRound = false)
 			}
 			else if(wasLastMann && !Rogue_Mode() && round.Waves.Length)
 			{
+				Cooldown = GetGameTime() + 45.0;
+
+				SpawnTimer(45.0);
+				CreateTimer(45.0, Waves_RoundStartTimer, _, TIMER_FLAG_NO_MAPCHANGE);
+				
+				SPrintToChatAll("You were given extra 45 seconds to prepare...");
+			}
+			else if(GiveBreakForPlayers && !Rogue_Mode() && round.Waves.Length)
+			{
 				Cooldown = GetGameTime() + 30.0;
 
 				SpawnTimer(30.0);
 				CreateTimer(30.0, Waves_RoundStartTimer, _, TIMER_FLAG_NO_MAPCHANGE);
 				
-				PrintToChatAll("You were given extra 30 seconds to prepare...");
+				SPrintToChatAll("You were given extra 30 seconds to prepare, as most of your team died......");
 			}
 			else
 			{
-				Store_RandomizeNPCStore(0, _, true);
+				Store_RandomizeNPCStore(ZR_STORE_WAVEPASSED);
 				if(refreshNPCStore)
-					Store_RandomizeNPCStore(0);
+					Store_RandomizeNPCStore(ZR_STORE_DEFAULT_SALE);
+
 				
 				NPC_SpawnNext(panzer_spawn, panzer_sound);
 				return;
 			}
 
-			if(refreshNPCStore)
-				Store_RandomizeNPCStore(0);
+			Store_RandomizeNPCStore(ZR_STORE_WAVEPASSED);
 			
-			Store_RandomizeNPCStore(0, _, true);
+			if(refreshNPCStore)
+				Store_RandomizeNPCStore(ZR_STORE_DEFAULT_SALE);
+			
 		}
 	}
 	else if(subgame)
 	{
-		PrintToChatAll("FREEPLAY OCCURED, BAD CFG, REPORT BUG");
+		SPrintToChatAll("FREEPLAY OCCURED, BAD CFG, REPORT BUG");
 		CurrentRound = 0;
+		RelayCurrentRound = 0;
 		CurrentWave = -1;
 	}
 	else
@@ -2468,7 +2550,7 @@ void Waves_Progress(bool donotAdvanceRound = false)
 //		else if(i_WaveHasFreeplay == 1)
 //			//EarlyReturn = Waves_NextSpecialWave();
 		else
-			PrintToChatAll("epic fail");
+			SPrintToChatAll("wave somehow failed, report this.");
 
 		if(EarlyReturn)
 		{
@@ -2543,7 +2625,7 @@ static Action Freeplay_HudInfoTimer(Handle timer)
 		}
 		case 1:
 		{
-			for (int client = 0; client < MaxClients; client++)
+			for (int client = 1; client <= MaxClients; client++)
 			{
 				if(IsValidClient(client) && GetClientTeam(client) == 2)
 				{
@@ -2556,7 +2638,7 @@ static Action Freeplay_HudInfoTimer(Handle timer)
 		}
 		case 2:
 		{
-			for (int client = 0; client < MaxClients; client++)
+			for (int client = 1; client <= MaxClients; client++)
 			{
 				if(IsValidClient(client) && GetClientTeam(client) == 2)
 				{
@@ -2569,7 +2651,7 @@ static Action Freeplay_HudInfoTimer(Handle timer)
 		}
 		case 3:
 		{
-			for (int client = 0; client < MaxClients; client++)
+			for (int client = 1; client <= MaxClients; client++)
 			{
 				if(IsValidClient(client) && GetClientTeam(client) == 2)
 				{
@@ -2581,7 +2663,6 @@ static Action Freeplay_HudInfoTimer(Handle timer)
 			FreeplayTimeLimit = GetGameTime() + 3607.5; // one hour and 7.5 extra seconds because of setup time smh
 			CPrintToChatAll("{yellow}IMPORTANT: The faster you beat waves, the more cash AND experience you'll get!");
 			CreateTimer(0.1, Freeplay_ExtraCashTimer, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-			DeleteShadowsOffZombieRiot();
 			Freeplay_Info = 0;
 		}
 		default:
@@ -2653,7 +2734,7 @@ public void Medival_Wave_Difficulty_Riser(int difficulty)
 {
 	CPrintToChatAll("{darkred}%t", "Medieval_Difficulty", difficulty);
 	
-	float difficulty_math = Pow(0.9, float(difficulty));
+	float difficulty_math = Pow(0.95, float(difficulty));
 	
 	if(difficulty_math < 0.1) //Just make sure that it doesnt go below.
 	{
@@ -2662,6 +2743,7 @@ public void Medival_Wave_Difficulty_Riser(int difficulty)
 	//invert the number and then just set the difficulty medival level to the % amount of damage resistance.
 	//This means that you can go upto 100% dmg res but if youre retarded enough to do this then you might aswell have an unplayable experience.
 	
+	Medival_Difficulty_Level_NotMath = difficulty;
 	Medival_Difficulty_Level = difficulty_math; //More armor and damage taken.
 }
 
@@ -2760,7 +2842,7 @@ bool Waves_Started()
 	return (CurrentRound || CurrentWave != -1);
 }
 
-int ZR_Waves_GetRound()
+int Waves_GetRoundScale()
 {
 	if(Construction_Mode())
 		return Construction_GetRound();
@@ -2771,9 +2853,9 @@ int ZR_Waves_GetRound()
 	if(Waves_InFreeplay())
 	{
 		int RoundGive = CurrentRound;
-		if(RoundGive < 60)
+		if(RoundGive < 40)
 		{
-			RoundGive = 60; //should atleast always be treated as round 60.
+			RoundGive = 40; //should atleast always be treated as round 40.
 		}
 		return RoundGive;
 	}
@@ -2781,9 +2863,9 @@ int ZR_Waves_GetRound()
 	return CurrentRound;
 }
 
-int Waves_GetMaxRound()
+int Waves_GetMaxRound(bool real = false)
 {
-	return FakeMaxWaves ? FakeMaxWaves : (Rounds.Length-1);
+	return (!real && FakeMaxWaves) ? FakeMaxWaves : (Rounds.Length-1);
 }
 
 float GetWaveSetupCooldown()
@@ -3008,14 +3090,15 @@ void DoGlobalMultiScaling()
 	if(playercount < 2.0)
 		playercount = 2.0;
 	
-	if(ZRStocks_PlayerScalingDynamic(0.0,true, true) >= 19.0)
+	int PlayersIngame = RoundToNearest(ZRStocks_PlayerScalingDynamic(0.0,true, true));
+
+	if(PlayersIngame >= 19.0)
 		EnableSilentMode = true;
 	else
 		EnableSilentMode = false;
-
-//	EnableSilentMode = true;
 	
 	playercount *= 0.88;
+	playercount *= GetScaledPlayerCountMulti(PlayersIngame);
 
 	float multi = playercount / 4.0;
 	
@@ -3031,7 +3114,7 @@ void DoGlobalMultiScaling()
 	//certain maps need this, if they are too big and raids have issues etc.
 	MultiGlobalHighHealthBoss *= zr_raidmultihp.FloatValue;
 
-	float cap = zr_enemymulticap.FloatValue;
+	float cap = zr_maxscaling_untillhp.FloatValue;
 
 	if(multi > cap)
 	{
@@ -3073,6 +3156,37 @@ void DoGlobalMultiScaling()
 	{
 		PlayerCountResBuffScaling = 0.75;
 	}
+}
+
+// Anything below this amount of players is considered "balanced" and players are each considered as pulling their weight.
+#define SCALE_PLAYERCOUNT_CUTOFF    14
+// Controls how quickly the scaling multiplier drops off.
+// Lower values = slower decay, players beyond SCALE_PLAYERCOUNT_CUTOFF contribute much more to scaling, much longer
+// Higher valeus = faster decay, players beyond SCALE_PLAYERCOUNT_CUTOFF contribute much less to scaling, much sooner
+#define SCALE_DROP_RATE             0.04
+// Lowest possible multiplier for high player counts.
+// Once scaling settles, each player contributes at least 80% of a player, never lower.
+// This only really matters for very high playercounts even beyond 40, simply a safeguard so it can't go into insanity.
+#define SCALE_MIN_MUTIPLIER         0.8
+
+// Returns the effective players for scaling
+float GetScaledPlayerCountMulti(int players)
+{
+    if (players <= SCALE_PLAYERCOUNT_CUTOFF)
+        return 1.0;
+    
+    float excess = float(players - SCALE_PLAYERCOUNT_CUTOFF);
+    float multiplier = 1.0 - (1.0 - SCALE_MIN_MUTIPLIER) * (1.0 - Exponential(-SCALE_DROP_RATE * excess));
+
+    return multiplier;
+}
+
+void ScalingMultiplyEnemyHpGlobalScale(int iNpc)
+{
+	float Maxhealth = float(ReturnEntityMaxHealth(iNpc));
+	Maxhealth *= MultiGlobalHealth;
+	SetEntProp(iNpc, Prop_Data, "m_iHealth", RoundToNearest(Maxhealth));
+	SetEntProp(iNpc, Prop_Data, "m_iMaxHealth", RoundToNearest(Maxhealth));
 }
 
 void Waves_ForceSetup(float cooldown)
@@ -3966,7 +4080,7 @@ bool Waves_NextFreeplayCall(bool donotAdvanceRound)
 			Citizen_SetupStart();
 			if(CurrentRound+1 == 200)
 			{
-				for (int client = 0; client < MaxClients; client++)
+				for (int client = 1; client <= MaxClients; client++)
 				{
 					if(IsValidClient(client) && !b_IsPlayerABot[client])
 					{
@@ -3984,149 +4098,6 @@ bool Waves_NextFreeplayCall(bool donotAdvanceRound)
 	return false;
 }
 
-/*
-bool Waves_NextSpecialWave(rounds Rounds, bool panzer_spawn, bool panzer_sound, int panzer_chance, bool GiveAmmoSupplies)
-{
-	Rounds.GetArray(length, round);
-	if(++CurrentWave < 8)
-	{
-		DoGlobalMultiScaling();
-
-		int postWaves = CurrentRound - length;
-		f_FreeplayDamageExtra = 1.0 + (postWaves / 30.0);
-
-		Rounds.GetArray(length, round);
-		length = round.Waves.Length;
-		
-		int Max_Enemy_Get = Freeplay_EnemyCount();
-		for(int i; i < length; i++)
-		{
-			if(Freeplay_ShouldAddEnemy()) //Do not allow more then 3 different enemy types at once, or else freeplay just takes way too long and the RNG will cuck it.
-			{
-				round.Waves.GetArray(i, wave);
-				Freeplay_AddEnemy(postWaves, wave.EnemyData, wave.Count);
-
-				if(wave.Count > 0)
-				{
-					for(int a; a < wave.Count; a++)
-					{
-						Waves_AddNextEnemy(wave.EnemyData);
-					}
-					
-					Zombies_Currently_Still_Ongoing += wave.Count;
-
-					if(!(--Max_Enemy_Get))
-						break;
-				}
-			}
-		}
-
-		// Note: Artvin remove this, this is freeplay code
-		if(Freeplay_ShouldMiniBoss() && !subgame) //no miniboss during roguelikes.
-		{
-			panzer_spawn = true;
-			NPC_SpawnNext(panzer_spawn, true);
-		}
-		else
-		{
-			panzer_spawn = false;
-			NPC_SpawnNext(false, false);
-		}
-		
-		if(!Enemies.Length)
-		{
-			CurrentWave++;
-			Waves_Progress();
-			return true;
-		}
-		CurrentWave = 9;
-	}
-	else if(donotAdvanceRound)
-	{
-		CurrentWave = 9;
-	}
-	else
-	{
-		WaveEndLogicExtra();
-
-		int postWaves = CurrentRound - length;
-		Freeplay_OnEndWave(round.Cash);
-		CurrentCash += round.Cash;
-
-		if(round.Cash)
-		{
-			CPrintToChatAll("{green}%t{default}","Cash Gained This Wave", round.Cash);
-		}
-		for(int client = 1; client <= MaxClients; client++)
-		{
-			if(IsClientInGame(client))
-			{
-				if(music_stop)
-				{
-					Music_Stop_All(client);
-				}
-			}
-		}
-		
-		RaidMusicSpecial1.Clear();
-		
-		ExcuteRelay("zr_wavedone");
-		CurrentRound++;
-		CurrentWave = -1;
-		for(int client=1; client<=MaxClients; client++)
-		{
-			if(IsClientInGame(client))
-			{
-				DoOverlay(client, "", 2);
-				if(IsPlayerAlive(client) && GetClientTeam(client)==2)
-					GiveXP(client, round.Xp);
-			}
-		}
-		
-		
-		ReviveAll();
-		
-		Music_EndLastmann();
-		CheckAlivePlayers();
-
-		if((CurrentRound % 5) == 4)
-		{
-			Freeplay_SetupStart(true);
-
-			Cooldown = GetGameTime() + 15.0;
-			
-			InSetup = true;
-			ExcuteRelay("zr_setuptime");
-			
-			SpawnTimer(15.0);
-			CreateTimer(15.0, Waves_RoundStartTimer, _, TIMER_FLAG_NO_MAPCHANGE);
-			
-			Menu menu = new Menu(Waves_FreeplayVote);
-			menu.SetTitle("Continue Freeplay..?\nThis will be asked every 5 waves.\n ");
-			menu.AddItem("", "Yes");
-			menu.AddItem("", "No");
-			menu.ExitButton = false;
-			
-			int total = 0;
-			int[] players = new int[MaxClients];
-			for(int i=1; i<=MaxClients; i++)
-			{
-				if(IsClientInGame(i) && !IsFakeClient(i) && GetClientTeam(i)==2)
-					players[total++] = i;
-			}
-			
-			menu.DisplayVote(players, total, 15);
-			
-			Citizen_SetupStart();
-		}
-		else
-		{
-			return true;
-		}
-	}
-	return false;
-}
-*/
 int CashGainedTotal;
 void Waves_ResetCashGiveWaveEnd()
 {
@@ -4148,7 +4119,7 @@ int Waves_AverageLevelGet(int MaxLevelAllow)
 	int LevelObtained;
 	for(int client=1; client<=MaxClients; client++)
 	{
-		if(IsClientInGame(client) && !IsFakeClient(client))
+		if(IsClientInGame(client) && !IsFakeClient(client) && Database_IsCached(client))
 		{
 			if(Level[client] >= MaxLevelAllow)
 				LevelObtained += MaxLevelAllow;

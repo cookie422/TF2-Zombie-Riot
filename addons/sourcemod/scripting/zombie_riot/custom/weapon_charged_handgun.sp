@@ -9,8 +9,8 @@ static bool Handle_on[MAXPLAYERS+1]={false, ...};
 static float Damage_Reduction[MAXENTITIES]={0.0, ...};
 static float Damage_Tornado[MAXENTITIES]={0.0, ...};
 static float Damage_Projectile[MAXENTITIES]={0.0, ...};
-static float TORNADO_Radius[MAXTF2PLAYERS];
-static bool Laser_Cutter_Static[MAXTF2PLAYERS] = {false, ...};
+static float TORNADO_Radius[MAXPLAYERS];
+static bool Laser_Cutter_Static[MAXPLAYERS] = {false, ...};
 static int Projectile_To_Duo[MAXENTITIES]={0, ...};
 static int Projectile_Cutter_Link[MAXENTITIES]={0, ...};
 static int Projectile_To_Client[MAXENTITIES]={0, ...};
@@ -880,7 +880,7 @@ public Action Reset_weapon_charged_handgun(Handle cut_timer, DataPack pack)
 		{
 			char buffer[36];
 			GetEntityClassname(weapon, buffer, sizeof(buffer));
-			if(TF2_GetClassnameSlot(buffer) == TFWeaponSlot_Secondary)
+			if(TF2_GetClassnameSlot(buffer, weapon) == TFWeaponSlot_Secondary)
 			{
 				Attributes_Set(weapon, 670, base_chargetime[client]);
 				ClientCommand(client, "playgamesound items/medshotno1.wav");

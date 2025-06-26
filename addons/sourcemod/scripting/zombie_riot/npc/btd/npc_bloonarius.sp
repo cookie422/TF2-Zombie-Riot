@@ -54,7 +54,7 @@ static int SpawnMulti(int count, int players, bool elite)
 
 static float MoabSpeed(bool elite)
 {
-	if(CurrentRound < (elite ? 59 : 29))
+	if(CurrentRound < (elite ? 39 : 29))
 		return elite ? 31.25 : 62.5;
 	
 	return elite ? 37.5 : 75.0;
@@ -68,9 +68,9 @@ static int CurrentTier(bool elite)
 	{
 		round = (CurrentRound - 38) / 20;
 	}
-	else	// 14,29,44,59
+	else	// 9,19,29,39
 	{
-		round = (CurrentRound - 13) / 15;
+		round = (CurrentRound - 8) / 10;
 	}
 
 	if(round > 3)
@@ -117,15 +117,15 @@ static void SetBossBloonPower(int players, bool elite)
 	}
 	else
 	{
-		if(CurrentRound > 58)
+		if(CurrentRound > 38)
 		{
 			RaidModeScaling = 80.0 / 3.0;
 		}
-		else if(CurrentRound > 43)
+		else if(CurrentRound > 28)
 		{
 			RaidModeScaling = 20.0 / 3.0;
 		}
-		else if(CurrentRound > 28)
+		else if(CurrentRound > 18)
 		{
 			RaidModeScaling = 1.0;
 		}
@@ -277,7 +277,7 @@ methodmap Bloonarius < CClotBody
 		music.Time = 198;
 		music.Volume = 2.0;
 		music.Custom = true;
-		strcopy(music.Name, sizeof(music.Name), "Primal One : Bloons Tower Defense 6");
+		strcopy(music.Name, sizeof(music.Name), "Primal One");
 		strcopy(music.Artist, sizeof(music.Artist), "Tim Haywood");
 		Music_SetRaidMusic(music);
 		
@@ -396,7 +396,7 @@ public void Bloonarius_ClotThink(int iNPC)
 		npc.AddGesture("ACT_BLOONARIUS_RAGE");
 		npc.m_flNextThinkTime = gameTime + 1.8;
 
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		
 		//if(npc.m_bElite)
@@ -458,7 +458,7 @@ public void Bloonarius_ClotThink(int iNPC)
 		float WorldSpaceVec[3]; WorldSpaceCenter(npc.index, WorldSpaceVec);		
 		float distance = GetVectorDistance(vecTarget, WorldSpaceVec, true);
 
-		NPC_SetGoalEntity(npc.index, npc.m_iTarget);
+		npc.SetGoalEntity(npc.m_iTarget);
 		npc.StartPathing();
 
 		if(npc.m_flAttackHappens)
@@ -512,7 +512,7 @@ public void Bloonarius_ClotThink(int iNPC)
 	}
 	else
 	{
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 	}
 }
@@ -562,11 +562,7 @@ public void Bloonarius_NPCDeath(int entity)
 
 	if(npc.m_bnew_target)
 	{
-		int entitygame = CreateEntityByName("game_round_win"); 
-		DispatchKeyValue(entitygame, "force_map_reset", "1");
-		SetEntProp(entitygame, Prop_Data, "m_iTeamNum", TFTeam_Red);
-		DispatchSpawn(entitygame);
-		AcceptEntityInput(entitygame, "RoundWin");
+		ForcePlayerWin();
 	}
 	
 	Spawns_RemoveFromArray(entity);

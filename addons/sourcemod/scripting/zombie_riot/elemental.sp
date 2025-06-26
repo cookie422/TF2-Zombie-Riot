@@ -1,8 +1,6 @@
 #pragma semicolon 1
 #pragma newdecls required
 
-// TODO: enum list of elements instead of each one being it's own variable
-
 enum
 {
 	Element_Nervous,
@@ -20,7 +18,7 @@ enum
 
 static const char ElementName[][] =
 {
-	"AC",
+	"NR",
 	"CH",
 	"CY",
 	"NE",
@@ -67,7 +65,7 @@ stock bool Elemental_GoingCritical(int entity)
 	
 	for(int i; i < Element_MAX; i++)
 	{
-		if((ElementDamage[entity][i] * 5 / 4) > TriggerDamage(entity, i))
+		if((ElementDamage[entity][i] * 5 / 4) > Elemental_TriggerDamage(entity, i))
 			return true;
 	}
 	
@@ -87,25 +85,24 @@ stock void Elemental_RemoveDamage(int entity, int amount)
 	}
 }
 
-static int TriggerDamage(int entity, int type)
+int Elemental_TriggerDamage(int entity, int type)
 {
 	if(entity <= MaxClients)
 		return MaxArmorCalculation(Armor_Level[entity], entity, 1.0);
 	
-
 	float divide = 3.0;
 
 	switch(type)
 	{
-		case Element_Necrosis:
+		case Element_Necrosis, Element_Nervous:
 		{
+		/*
 			if(GetTeam(entity) == TFTeam_Red)
 				return 1000;
 			
-			if(b_thisNpcIsARaid[entity])
-				return 50000;
-			
 			return b_thisNpcIsABoss[entity] ? 25000 : 12500;
+		*/
+			divide = 1.0;
 		}
 		case Element_Cyro:
 		{
@@ -133,24 +130,39 @@ static int TriggerDamage(int entity, int type)
 	if(Citizen_IsIt(entity))
 		return view_as<Citizen>(entity).m_iGunValue / 20;
 	
-	if(type != Element_Burger)
+	switch(type)
 	{
-		//also works against superbosses.
-		if(b_thisNpcIsARaid[entity] || EntRefToEntIndex(RaidBossActive) == entity)
+		case Element_Burger:
 		{
-			divide *= (5.2 * MultiGlobalHighHealthBoss); //Reduce way further so its good against raids.
+			// Don't scale more with bosses
 		}
-		else if(b_thisNpcIsABoss[entity])
+		/*case Element_Necrosis, Element_Nervous:
 		{
-			divide *= (3.0 * MultiGlobalHealthBoss); //Reduce way further so its good against bosses.
-		}
-		else if (b_IsGiant[entity])
+			// Don't scale more with bosses
+		}*/
+		default:
 		{
-			divide *= 2.0;
+			//also works against superbosses.
+			if(b_thisNpcIsARaid[entity] || EntRefToEntIndex(RaidBossActive) == entity)
+			{
+				divide *= (5.2 * MultiGlobalHighHealthBoss); //Reduce way further so its good against raids.
+			}
+			else if(b_thisNpcIsABoss[entity])
+			{
+				divide *= (3.0 * MultiGlobalHealthBoss); //Reduce way further so its good against bosses.
+			}
+			else if (b_IsGiant[entity])
+			{
+				divide *= 2.0;
+			}
+
+			divide *= fl_GibVulnerablity[entity];
 		}
 	}
 
-	return RoundToCeil((float(ReturnEntityMaxHealth(entity)) / fl_GibVulnerablity[entity]) / divide);
+	int amount = RoundToCeil(float(ReturnEntityMaxHealth(entity)) / divide);
+	
+	return amount;
 }
 
 bool Elemental_HurtHud(int entity, char Debuff_Adder[128])
@@ -167,7 +179,6 @@ bool Elemental_HurtHud(int entity, char Debuff_Adder[128])
 		}
 	}
 	
-
 	// Don't display anything after 5 seconds of nothing
 	if((LastTime[entity] + 5.0) < gameTime && GetTeam(entity) != TFTeam_Red)
 		return false;
@@ -179,7 +190,7 @@ bool Elemental_HurtHud(int entity, char Debuff_Adder[128])
 	{
 		if(ElementDamage[entity][i] > 0)
 		{
-			int health = TriggerDamage(entity, i) - ElementDamage[entity][i];
+			int health = Elemental_TriggerDamage(entity, i) - ElementDamage[entity][i];
 			if(health < lowHealth)
 			{
 				low = i;
@@ -193,11 +204,24 @@ bool Elemental_HurtHud(int entity, char Debuff_Adder[128])
 		return false;
 	
 	// <CY 50%>
-	Format(Debuff_Adder, sizeof(Debuff_Adder), "<%s %d％>", ElementName[low], ElementDamage[entity][low] * 100 /TriggerDamage(entity, low));
+	Format(Debuff_Adder, sizeof(Debuff_Adder), "<%s %d％>", ElementName[low], ElementDamage[entity][low] * 100 / Elemental_TriggerDamage(entity, low));
 	return true;
 }
 
-void Elemental_AddNervousDamage(int victim, int attacker, int damagebase, bool sound = true, bool ignoreArmor = false)
+static void ApplyElementalEvent(int victim, int attacker, int damage)
+{
+		// x0.08 the actual damage for readability
+	int display = RoundFloat(damage * 0.8);
+
+	Event event = CreateEvent("player_bonuspoints", true);
+	event.SetInt("source_entindex", victim);
+	event.SetInt("player_entindex", attacker);
+	event.SetInt("points", -display);
+	event.FireToClient(attacker);
+	event.Cancel();
+}
+
+void Elemental_AddNervousDamage(int victim, int attacker, int damagebase, bool sound = true, bool ignoreArmor = false, int weapon = -1)
 {
 	if(i_IsVehicle[victim])
 	{
@@ -236,6 +260,7 @@ void Elemental_AddNervousDamage(int victim, int attacker, int damagebase, bool s
 						TF2_StunPlayer(victim, 5.0, 0.9, TF_STUNFLAG_SLOWDOWN);
 
 					DealTruedamageToEnemy(0, victim, 500.0);
+					Force_ExplainBuffToClient(victim, "Nervous Impairment Elemental Damage");
 				}
 			}
 			
@@ -256,10 +281,9 @@ void Elemental_AddNervousDamage(int victim, int attacker, int damagebase, bool s
 					if(GetEntProp(victim, Prop_Data, "m_iHealth") > (ReturnEntityMaxHealth(victim) * 3 / 4))
 						return;
 				}
-
 			}
 			
-			trigger = TriggerDamage(victim, Element_Nervous);
+			trigger = Elemental_TriggerDamage(victim, Element_Nervous);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Nervous;
@@ -267,19 +291,50 @@ void Elemental_AddNervousDamage(int victim, int attacker, int damagebase, bool s
 			if(ElementDamage[victim][Element_Nervous] > trigger)
 			{
 				ElementDamage[victim][Element_Nervous] = 0;
-				f_ArmorCurrosionImmunity[victim][Element_Nervous]  = GetGameTime() + 5.0;
+				f_ArmorCurrosionImmunity[victim][Element_Nervous] = GetGameTime() + 5.0;
 
 				if(GetTeam(victim) == TFTeam_Red)
 				{
-					FreezeNpcInTime(victim, 3.0);
-					SDKHooks_TakeDamage(victim, attacker, attacker, 400.0, DMG_TRUEDAMAGE|DMG_PREVENT_PHYSICS_FORCE);
+					ApplyStatusEffect(attacker, victim, "Paralysis", 3.0);
+					SDKHooks_TakeDamage(victim, attacker, attacker, 500.0, DMG_TRUEDAMAGE|DMG_PREVENT_PHYSICS_FORCE, .Zr_damage_custom = ZR_DAMAGE_NOAPPLYBUFFS_OR_DEBUFFS);
 				}
 				else
 				{
-					FreezeNpcInTime(victim, b_thisNpcIsARaid[victim] ? 3.0 : 5.0);
-					SDKHooks_TakeDamage(victim, attacker, attacker, 1000.0, DMG_TRUEDAMAGE|DMG_PREVENT_PHYSICS_FORCE);
+					ApplyStatusEffect(attacker, victim, "Paralysis", b_thisNpcIsARaid[victim] ? 1.0 : (b_thisNpcIsABoss[victim] ? 1.5 : 3.0));
+					
+					int DamageTags = DMG_PREVENT_PHYSICS_FORCE;
+
+					if(weapon != -1)
+						DamageTags |= DMG_PLASMA;
+					else
+						DamageTags |= DMG_TRUEDAMAGE;
+
+					float bleedDamage = 60.0;
+					if(weapon != -1)
+					{
+						float multi = Attributes_Get(weapon, 2, 1.0);
+						if(multi > 0.0)
+							bleedDamage *= multi;
+						
+						multi = Attributes_Get(weapon, 6, 1.0);
+						if(multi > 0.0)
+							bleedDamage /= multi;
+						
+						multi = Attributes_Get(weapon, 410, 1.0);
+						if(multi > 0.0)
+							bleedDamage *= multi;
+					}
+					else
+					{
+						bleedDamage *= 100.0;
+					}
+
+					SDKHooks_TakeDamage(victim, attacker, attacker, bleedDamage, DamageTags, .Zr_damage_custom = ZR_DAMAGE_NOAPPLYBUFFS_OR_DEBUFFS);
 				}
 			}
+
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 	else if(i_IsABuilding[victim])	// Buildings
@@ -345,13 +400,13 @@ void Elemental_AddChaosDamage(int victim, int attacker, int damagebase, bool sou
 					_,
 					_,
 					true,
-					99,
+					3,
 					false,
 					_,
 					SakratanGroupDebuff);
 					b_NpcIsTeamkiller[victim] = false;
 					f_ArmorCurrosionImmunity[victim][Element_Chaos]  = GetGameTime() + 10.0;
-				//	Explode_Logic_Custom(fl_rocket_particle_dmg[entity] , inflictor , owner , -1 , ProjectileLoc , fl_rocket_particle_radius[entity] , _ , _ , b_rocket_particle_from_blue_npc[entity]);	//acts like a rocket
+					Force_ExplainBuffToClient(victim, "Chaos Elemental Damage");
 				}
 			}
 			
@@ -374,7 +429,7 @@ void Elemental_AddChaosDamage(int victim, int attacker, int damagebase, bool sou
 				}
 			}
 			
-			trigger = TriggerDamage(victim, Element_Chaos);
+			trigger = Elemental_TriggerDamage(victim, Element_Chaos);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Chaos;
@@ -391,6 +446,9 @@ void Elemental_AddChaosDamage(int victim, int attacker, int damagebase, bool sou
 				if(BurnDamage[victim] < burn)
 					BurnDamage[victim] = burn;
 			}
+
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 	else if(i_IsABuilding[victim])	// Buildings
@@ -446,6 +504,7 @@ void Elemental_AddVoidDamage(int victim, int attacker, int damagebase, bool soun
 					FramingInfestorSpread(victim);
 					EmitSoundToAll("npc/scanner/cbot_discharge1.wav", victim, SNDCHAN_STATIC, RAIDBOSS_ZOMBIE_SOUNDLEVEL, _, BOSS_ZOMBIE_VOLUME);
 					f_ArmorCurrosionImmunity[victim][Element_Void] = GetGameTime() + 5.0;
+					Force_ExplainBuffToClient(victim, "Void Elemental Damage");
 					//Do code for void spread
 				}
 			}
@@ -467,10 +526,9 @@ void Elemental_AddVoidDamage(int victim, int attacker, int damagebase, bool soun
 					if(GetEntProp(victim, Prop_Data, "m_iHealth") > (ReturnEntityMaxHealth(victim) * 3 / 4))
 						return;
 				}
-
 			}
 			
-			trigger = TriggerDamage(victim, Element_Void);
+			trigger = Elemental_TriggerDamage(victim, Element_Void);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Void;
@@ -487,6 +545,9 @@ void Elemental_AddVoidDamage(int victim, int attacker, int damagebase, bool soun
 				//do not spread.
 				FramingInfestorSpread(victim);
 			}
+
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 	else if(i_IsABuilding[victim])	// Buildings
@@ -515,9 +576,9 @@ static void SakratanGroupDebuffInternal(int victim)
 {
 	if(victim <= MaxClients)
 	{
-		DealTruedamageToEnemy(0, victim, 250.0);
+		DealTruedamageToEnemy(0, victim, 350.0);
 	}
-	IncreaseEntityDamageTakenBy(victim, 1.30, 10.0);
+	IncreaseEntityDamageTakenBy(victim, 1.40, 10.0);
 }
 
 void Elemental_AddCyroDamage(int victim, int attacker, int damagebase, int type)
@@ -531,6 +592,7 @@ void Elemental_AddCyroDamage(int victim, int attacker, int damagebase, int type)
 	
 	if(b_NpcIsInvulnerable[victim])
 		return;
+	
 	int damage = RoundFloat(damagebase * fl_Extra_Damage[attacker]);
 	if(NpcStats_ElementalAmp(victim))
 	{
@@ -545,7 +607,7 @@ void Elemental_AddCyroDamage(int victim, int attacker, int damagebase, int type)
 	{
 		if(f_ArmorCurrosionImmunity[victim][Element_Cyro] < GetGameTime())
 		{
-			int trigger = TriggerDamage(victim, Element_Cyro);
+			int trigger = Elemental_TriggerDamage(victim, Element_Cyro);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Cyro;
@@ -557,6 +619,9 @@ void Elemental_AddCyroDamage(int victim, int attacker, int damagebase, int type)
 
 				Cryo_FreezeZombie(attacker, victim, type);
 			}
+
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 	else if(i_IsABuilding[victim])	// Buildings
@@ -576,20 +641,54 @@ void Elemental_AddNecrosisDamage(int victim, int attacker, int damagebase, int w
 	
 	if(b_NpcIsInvulnerable[victim])
 		return;
+
 	int damage = RoundFloat(damagebase * fl_Extra_Damage[attacker]);
 	if(NpcStats_ElementalAmp(victim))
 	{
 		damage = RoundToNearest(float(damage) * 1.3);
 	}
+
 	if(victim <= MaxClients)
 	{
-		// No effect currently for Necrosis vs Players
+		Armor_DebuffType[victim] = 4;
+		if(f_ArmorCurrosionImmunity[victim][Element_Necrosis] < GetGameTime() && Armor_Charge[victim] < 1)
+		{
+			if(i_HealthBeforeSuit[victim] > 0)
+			{
+				SDKHooks_TakeDamage(victim, attacker, attacker, damagebase * 4.0, DMG_TRUEDAMAGE|DMG_PREVENT_PHYSICS_FORCE);
+			}
+			else
+			{
+				damage -= RoundToNearest(Attributes_GetOnPlayer(victim, Attrib_ElementalDef, false));
+				if(damage < 1)
+					damage = 1;
+				
+				Armor_Charge[victim] -= damage;
+				if(Armor_Charge[victim] < (-MaxArmorCalculation(Armor_Level[victim], victim, 1.0)))
+				{
+					Armor_Charge[victim] = 0;
+					f_ArmorCurrosionImmunity[victim][Element_Necrosis] = GetGameTime() + 7.5;
+					
+					StartBleedingTimer(victim, attacker, 100.0, 15, weapon, DMG_PLASMA, ZR_DAMAGE_NOAPPLYBUFFS_OR_DEBUFFS);
+					Force_ExplainBuffToClient(victim, "Necrosis Elemental Damage");
+
+					int other, i;
+					while(TF2_GetItem(victim, other, i))
+					{
+						Saga_ChargeReduction(victim, other, -15.0);
+					}
+				}
+			}
+			
+			if(!Armor_Charge[victim])
+				ClientCommand(victim, "playgamesound weapons/drg_pomson_drain_01.wav");
+		}
 	}
 	else if(!b_NpcHasDied[victim])	// NPCs
 	{
 		if(f_ArmorCurrosionImmunity[victim][Element_Necrosis] < GetGameTime())
 		{
-			int trigger = TriggerDamage(victim, Element_Necrosis);
+			int trigger = Elemental_TriggerDamage(victim, Element_Necrosis);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Necrosis;
@@ -599,7 +698,34 @@ void Elemental_AddNecrosisDamage(int victim, int attacker, int damagebase, int w
 				ElementDamage[victim][Element_Necrosis] = 0;
 				f_ArmorCurrosionImmunity[victim][Element_Necrosis] = GetGameTime() + 7.5;
 
-				StartBleedingTimer(victim, attacker, 800.0, 15, weapon, DMG_TRUEDAMAGE, ZR_DAMAGE_NOAPPLYBUFFS_OR_DEBUFFS);
+				int DamageTags = DMG_PREVENT_PHYSICS_FORCE;
+				
+				if(weapon != -1)
+					DamageTags |= DMG_PLASMA;
+				else
+					DamageTags |= DMG_TRUEDAMAGE;
+
+				float bleedDamage = 8.0;
+				if(weapon != -1)
+				{
+					float multi = Attributes_Get(weapon, 2, 1.0);
+					if(multi > 0.0)
+						bleedDamage *= multi;
+					
+					multi = Attributes_Get(weapon, 6, 1.0);
+					if(multi > 0.0)
+						bleedDamage /= multi;
+					
+					multi = Attributes_Get(weapon, 410, 1.0);
+					if(multi > 0.0)
+						bleedDamage *= multi;
+				}
+				else
+				{
+					bleedDamage *= 100.0;
+				}
+
+				StartBleedingTimer(victim, attacker, bleedDamage, 15, weapon, DamageTags, ZR_DAMAGE_NOAPPLYBUFFS_OR_DEBUFFS);
 				
 				float time = 7.5;
 				if(b_thisNpcIsARaid[victim])
@@ -607,6 +733,9 @@ void Elemental_AddNecrosisDamage(int victim, int attacker, int damagebase, int w
 				
 				ApplyStatusEffect(attacker, victim, "Enfeeble", time);
 			}
+
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 }
@@ -637,7 +766,7 @@ void Elemental_AddOsmosisDamage(int victim, int attacker, int damagebase)
 	{
 		if(f_ArmorCurrosionImmunity[victim][Element_Osmosis] < GetGameTime())
 		{
-			int trigger = TriggerDamage(victim, Element_Osmosis);
+			int trigger = Elemental_TriggerDamage(victim, Element_Osmosis);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Osmosis;
@@ -648,6 +777,9 @@ void Elemental_AddOsmosisDamage(int victim, int attacker, int damagebase)
 				f_ArmorCurrosionImmunity[victim][Element_Osmosis] = GetGameTime() + 15.0;
 				OsmosisElementalEffectEnable(victim, 7.5);
 			}
+
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 }
@@ -732,6 +864,7 @@ void Elemental_AddCorruptionDamage(int victim, int attacker, int damagebase, boo
 
 					EmitSoundToAll("ambient/energy/weld1.wav", victim, SNDCHAN_STATIC, RAIDBOSS_ZOMBIE_SOUNDLEVEL, _, BOSS_ZOMBIE_VOLUME);
 					f_ArmorCurrosionImmunity[victim][Element_Corruption] = GetGameTime() + 5.0;
+					Force_ExplainBuffToClient(victim, "Corruption Elemental Damage");
 				}
 			}
 			
@@ -754,7 +887,7 @@ void Elemental_AddCorruptionDamage(int victim, int attacker, int damagebase, boo
 				}
 			}
 			
-			trigger = TriggerDamage(victim, Element_Corruption);
+			trigger = Elemental_TriggerDamage(victim, Element_Corruption);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Corruption;
@@ -767,6 +900,9 @@ void Elemental_AddCorruptionDamage(int victim, int attacker, int damagebase, boo
 				int count = RoundToCeil(3.0 * MultiGlobalEnemy);
 				Matrix_Spawning(attacker, count);
 			}
+			
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 	else if(i_IsABuilding[victim])	// Buildings
@@ -782,7 +918,7 @@ void Elemental_AddCorruptionDamage(int victim, int attacker, int damagebase, boo
 
 static char g_Agent_Summons[][] =
 {
-	//wave 1-29 | 0-6
+	//wave 1-19 | 0-6
 	"npc_agent_john",
 	"npc_agent_james",
 	"npc_agent_chase",
@@ -799,7 +935,7 @@ static char g_Agent_Summons[][] =
 	"npc_agent_tyler",
 	"npc_agent_wayne",
 
-	//wave 30-59 | 7-11
+	//wave 20-39 | 7-11
 	"npc_agent_alan",
 	"npc_agent_eric",
 	"npc_agent_jack",
@@ -817,7 +953,7 @@ static char g_Agent_Summons[][] =
 	"npc_agent_mike",
 	"npc_agent_sam",
 
-	//wave 60 | 12-16
+	//wave 40 | 12-16
 	"npc_agent_connor",
 	"npc_agent_henry",
 	"npc_agent_jeremy",
@@ -831,12 +967,12 @@ static char g_Agent_Summons[][] =
 static void Matrix_Spawning(int entity, int count)
 {
 	int summon = GetRandomInt(0, 6);
-	int wave = (ZR_Waves_GetRound() + 1);
-	if(wave >= 30)
+	int wave = (Waves_GetRoundScale() + 1);
+	if(wave >= 20)
 	{
 		summon = GetRandomInt(7, 11);
 	}
-	if(wave >= 45)
+	if(wave >= 30)
 	{
 		summon = GetRandomInt(12, 16);
 	}
@@ -851,6 +987,13 @@ static void Matrix_Spawning(int entity, int count)
 	if(b_thisNpcIsARaid[entity])
 	{
 		health = (ReturnEntityMaxHealth(entity)/100);
+	}
+	if(!b_thisNpcIsARaid[entity] && !b_thisNpcIsABoss[entity] && MultiGlobalHealth != 1.0)
+	{
+		//account for max hp sacling, or else we just keep multiplying forever...
+		//because it does the scaling on spawn, but doesnt revert it here when it adds a new npc....
+		//it was the same bug alaxios had, in this case, it has to be reversed.
+		health = RoundToNearest(float(health) / MultiGlobalHealth);
 	}
 	
 	Enemy enemy;
@@ -889,7 +1032,7 @@ void Elemental_AddBurgerDamage(int victim, int attacker, int damagebase)
 	{
 		if(f_ArmorCurrosionImmunity[victim][Element_Burger] < GetGameTime())
 		{
-			int trigger = TriggerDamage(victim, Element_Burger);
+			int trigger = Elemental_TriggerDamage(victim, Element_Burger);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Burger;
@@ -904,6 +1047,9 @@ void Elemental_AddBurgerDamage(int victim, int attacker, int damagebase)
 					SDKHooks_TakeDamage(victim, attacker, attacker, ReturnEntityMaxHealth(victim) * 5.0, DMG_TRUEDAMAGE|DMG_PREVENT_PHYSICS_FORCE, .Zr_damage_custom = ZR_DAMAGE_GIB_REGARDLESS);
 				}
 			}
+
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 }
@@ -971,7 +1117,7 @@ void Elemental_AddPlasmicDamage(int victim, int attacker, int damagebase, int we
 	{
 		if(f_ArmorCurrosionImmunity[victim][Element_Plasma] < GetGameTime())
 		{
-			int trigger = TriggerDamage(victim, Element_Plasma);
+			int trigger = Elemental_TriggerDamage(victim, Element_Plasma);
 
 			LastTime[victim] = GetGameTime();
 			LastElement[victim] = Element_Plasma;
@@ -1019,6 +1165,9 @@ void Elemental_AddPlasmicDamage(int victim, int attacker, int damagebase, int we
 				}
 				Cheese_PlaySplat(victim);
 			}
+
+			if(attacker && attacker <= MaxClients)
+				ApplyElementalEvent(victim, attacker, damage);
 		}
 	}
 	else if(i_IsABuilding[victim]) // In the rare occasion you inflict plasmic elemental damage to buildings (4/5/2024 mini incident)

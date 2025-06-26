@@ -312,7 +312,7 @@ static void ClotThink(int iNPC)
 		if(npc.m_flNextRangedBarrage_Spam < GameTime)
 		{	
 			
-			NPC_StopPathing(npc.index);
+			npc.StopPathing();
 			npc.m_bPathing = false;
 			npc.m_flSpeed = 0.0;
 			
@@ -397,7 +397,7 @@ static void ClotThink(int iNPC)
 	}
 	else
 	{
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		npc.m_flGetClosestTargetTime = 0.0;
 		npc.m_iTarget = GetClosestTarget(npc.index);
@@ -459,7 +459,7 @@ static Action Theocracy_Barrage_Anim(Handle timer, int ref)
 		TE_SendToAll();
 
 		UnderTides npcGetInfo = view_as<UnderTides>(npc.index);
-		int enemy_2[30];
+		int enemy_2[RAIDBOSS_GLOBAL_ATTACKLIMIT];
 		GetHighDefTargets(npcGetInfo, enemy_2, sizeof(enemy_2), true, false);
 		for(int i; i < sizeof(enemy_2); i++)
 		{

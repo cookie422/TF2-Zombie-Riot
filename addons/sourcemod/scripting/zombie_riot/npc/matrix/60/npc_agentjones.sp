@@ -268,7 +268,7 @@ public void AgentJones_ClotThink(int iNPC)
 			npc.m_bmovedelay = false;
 			AcceptEntityInput(npc.m_iWearable1, "Enable");
 		//	npc.FaceTowards(vecTarget, 1000.0);
-			NPC_StopPathing(npc.index);
+			npc.StopPathing();
 			npc.m_bPathing = false;
 		}
 		
@@ -280,11 +280,11 @@ public void AgentJones_ClotThink(int iNPC)
 		{
 			float vPredictedPos[3]; PredictSubjectPosition(npc, PrimaryThreatIndex,_,_, vPredictedPos);
 			
-			NPC_SetGoalVector(npc.index, vPredictedPos);
+			npc.SetGoalVector(vPredictedPos);
 		}
 		else
 		{
-			NPC_SetGoalEntity(npc.index, PrimaryThreatIndex);
+			npc.SetGoalEntity(PrimaryThreatIndex);
 		}
 		if(npc.m_flNextRangedAttack < GetGameTime(npc.index) && flDistanceToTarget > 62500 && flDistanceToTarget < 122500 && npc.m_flReloadDelay < GetGameTime(npc.index))
 		{
@@ -351,7 +351,7 @@ public void AgentJones_ClotThink(int iNPC)
 				float WorldSpaceVec[3]; WorldSpaceCenter(npc.index, WorldSpaceVec);
 				
 
-				FireBullet(npc.index, npc.m_iWearable1, WorldSpaceVec, vecDir, EscapeModeForNpc ? 10.0 : 40.0, 9000.0, DMG_BULLET, "bullet_tracer01_red");
+				FireBullet(npc.index, npc.m_iWearable1, WorldSpaceVec, vecDir, 40.0, 9000.0, DMG_BULLET, "bullet_tracer01_red");
 				
 				npc.PlayRangedSound();
 			}

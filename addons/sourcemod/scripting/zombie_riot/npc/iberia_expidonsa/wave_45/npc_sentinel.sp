@@ -247,11 +247,11 @@ public void IberianSentinel_ClotThink(int iNPC)
 		{
 			float vPredictedPos[3];
 			PredictSubjectPosition(npc, npc.m_iTarget,_,_, vPredictedPos);
-			NPC_SetGoalVector(npc.index, vPredictedPos);
+			npc.SetGoalVector(vPredictedPos);
 		}
 		else 
 		{
-			NPC_SetGoalEntity(npc.index, npc.m_iTarget);
+			npc.SetGoalEntity(npc.m_iTarget);
 		}
 		IberianSentinelSelfDefense(npc,GetGameTime(npc.index), npc.m_iTarget, flDistanceToTarget); 
 	}
@@ -289,17 +289,6 @@ public Action IberianSentinel_OnTakeDamage(int victim, int &attacker, int &infli
 			npc.Anger = true;
 		}
 	}
-	/*
-	float hittimes = 0;
-	if(ZR_Waves_GetRound()+1 >= 15)
-		hittimes = 25;
-	if(ZR_Waves_GetRound()+1 >= 30)
-		hittimes = 20;
-	if(ZR_Waves_GetRound()+1 >= 45)
-		hittimes = 15;
-	if(ZR_Waves_GetRound()+1 >= 55)
-		hittimes = 10;
-	*/
 	
 	return Plugin_Changed;
 }

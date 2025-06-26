@@ -1,7 +1,7 @@
 #pragma semicolon 1
 #pragma newdecls required
 
-// static int Weapon_Id[MAXTF2PLAYERS]; // Why did I do taht?
+// static int Weapon_Id[MAXPLAYERS]; // Why did I do taht?
 
 Handle g_hHell_Hoe_Management[MAXPLAYERS+1] = {INVALID_HANDLE, ...};
 static bool isStrikeHorizontal[MAXPLAYERS+1] = {false, ...};

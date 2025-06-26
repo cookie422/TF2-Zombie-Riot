@@ -163,11 +163,11 @@ public void SeabornSoldier_ClotThink(int iNPC)
 		if(distance < npc.GetLeadRadius())
 		{
 			float vPredictedPos[3]; PredictSubjectPosition(npc, npc.m_iTarget,_,_, vPredictedPos);
-			NPC_SetGoalVector(npc.index, vPredictedPos);
+			npc.SetGoalVector(vPredictedPos);
 		}
 		else 
 		{
-			NPC_SetGoalEntity(npc.index, npc.m_iTarget);
+			npc.SetGoalEntity(npc.m_iTarget);
 		}
 
 		npc.StartPathing();
@@ -193,9 +193,7 @@ public void SeabornSoldier_ClotThink(int iNPC)
 						{
 							int health = ReturnEntityMaxHealth(npc.index);
 
-							bool regrow = true;
-							Building_CamoOrRegrowBlocker(npc.index, _, regrow);
-							if(regrow)
+							if(!HasSpecificBuff(npc.index, "Growth Blocker"))
 								SetEntProp(npc.index, Prop_Data, "m_iHealth", health);
 							
 							float pos[3]; GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", pos);

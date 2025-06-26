@@ -574,7 +574,7 @@ public void Client_ZealotThink(int client)
 	/*
 	Find a better solution before continuning
 	*/
-	static int holding[MAXTF2PLAYERS];
+	static int holding[MAXPLAYERS];
 	int buttons = GetClientButtons(client);
 	if(holding[client] & IN_RELOAD)
 	{

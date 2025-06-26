@@ -1,6 +1,6 @@
 #pragma semicolon 1
 #pragma newdecls required
-static float f_AngelicShotgunHudCD[MAXTF2PLAYERS];
+static float f_AngelicShotgunHudCD[MAXPLAYERS];
 #define ANGELIC_STACKS_UNTILL_DOUBLE 2
 #define ANGELIC_ABILITY_CHARGE_0 10
 #define ANGELIC_ABILITY_CHARGE_1 32

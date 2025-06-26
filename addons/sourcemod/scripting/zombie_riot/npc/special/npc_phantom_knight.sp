@@ -155,7 +155,7 @@ methodmap PhantomKnight < CClotBody
 	
 	public PhantomKnight(float vecPos[3], float vecAng[3], int ally)
 	{
-		PhantomKnight npc = view_as<PhantomKnight>(CClotBody(vecPos, vecAng, COMBINE_CUSTOM_MODEL, "1.15", MinibossHealthScaling(110), ally));
+		PhantomKnight npc = view_as<PhantomKnight>(CClotBody(vecPos, vecAng, COMBINE_CUSTOM_MODEL, "1.15", MinibossHealthScaling(110.0), ally));
 		SetVariantInt(3);
 		AcceptEntityInput(npc.index, "SetBodyGroup");			
 		//Normal sized Miniboss!
@@ -171,9 +171,9 @@ methodmap PhantomKnight < CClotBody
 		
 		npc.m_flNextMeleeAttack = 0.0;
 		
-		float wave = float(ZR_Waves_GetRound()+1); //Wave scaling
+		float wave = float(Waves_GetRoundScale()+1); //Wave scaling
 		
-		wave *= 0.1;
+		wave *= 0.133333;
 
 		npc.m_flWaveScale = wave;
 		npc.m_flWaveScale *= 2.0;
@@ -300,7 +300,7 @@ public void PhantomKnight_ClotThink(int iNPC)
 	if(!npc.m_bisWalking) //Dont move, or path. so that he doesnt rotate randomly.
 	{
 		npc.m_flSpeed = 0.0;
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bisWalking = false;
 		npc.m_bPathing = false;	
 	}
@@ -383,11 +383,11 @@ public void PhantomKnight_ClotThink(int iNPC)
 		{
 			float vPredictedPos[3]; PredictSubjectPosition(npc, npc.m_iTarget,_,_, vPredictedPos);
 			
-			NPC_SetGoalVector(npc.index, vPredictedPos);
+			npc.SetGoalVector(vPredictedPos);
 		}
 		else
 		{
-			NPC_SetGoalEntity(npc.index, npc.m_iTarget);
+			npc.SetGoalEntity(npc.m_iTarget);
 		}
 		//Get position for just travel here.
 		
@@ -578,7 +578,7 @@ public void PhantomKnight_ClotThink(int iNPC)
 					}
 					float VecEnemy[3]; WorldSpaceCenter(npc.m_iTarget, VecEnemy);
 					npc.FaceTowards(VecEnemy, 15000.0);
-					if(i_PhantomsSpawned[npc.index] <= 5 || (ZR_Waves_GetRound() > 60 && i_PhantomsSpawned[npc.index] <= 10)) //We want a limit on how many fakes he can have.
+					if(i_PhantomsSpawned[npc.index] <= 5 || (Waves_GetRoundScale() > 40 && i_PhantomsSpawned[npc.index] <= 10)) //We want a limit on how many fakes he can have.
 					{
 						//If its wave 60 or above, he can spawn
 						int fake_spawned = NPC_CreateByName("npc_phantom_knight", -1, vecPos_Npc, vecAng_Npc,GetTeam(npc.index), "");

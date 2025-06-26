@@ -23,7 +23,13 @@ void ConVar_PluginStart()
 	ConVar_Add("mp_forceautoteam", "1.0"); //Force red
 	ConVar_Add("tf_bot_reevaluate_class_in_spawnroom", "1.0");//Bot logic to not break it
 	ConVar_Add("tf_bot_keep_class_after_death", "1.0"); //Bot logic to not break it
-	ConVar_Add("mp_humans_must_join_team", "red"); //Only read
+#if defined ZR
+	ConVar_Add("mp_humans_must_join_team", "any");
+#else 
+	ConVar_Add("mp_humans_must_join_team", "red"); //Only red
+#endif
+	ConVar_Add("mp_allowspectators", "1");
+	
 	ConVar_Add("mp_teams_unbalance_limit", "0.0"); //Dont rebalance
 	ConVar_Add("mp_scrambleteams_auto", "0.0"); //No scramble
 	ConVar_Add("tf_dropped_weapon_lifetime", "0.0"); //Remove dropped weapons
@@ -35,7 +41,6 @@ void ConVar_PluginStart()
 	ConVar_Add("tf_boost_drain_time", "99999.0"); //Overheal Logic, make it perma
 	ConVar_Add("tf_avoidteammates_pushaway", "0"); 
 
-	ConVar_Add("tf_scout_air_dash_count", "-1"); //Remove doublejumps
 	ConVar_Add("tf_allow_player_use", "1"); //Allow use!
 	ConVar_Add("tf_flamethrower_boxsize", "0.0"); //Flamethrower Particles are useless in ZR
 
@@ -46,9 +51,12 @@ void ConVar_PluginStart()
 	ConVar_Add("tf_mvm_defenders_team_size", "99");
 	ConVar_Add("tf_mvm_max_connected_players", "99");
 #endif
-#if defined ZR || defined RPG
+
+#if defined RPG
 	ConVar_Add("mp_waitingforplayers_time", "0.0");
 #endif
+
+//	mp_friendlyfire = ConVar_Add("mp_friendlyfire", "1.0");
 #if defined RPG
 	ConVar_Add("mp_friendlyfire", "1.0");
 #endif
@@ -58,7 +66,7 @@ void ConVar_PluginStart()
 	CvarNoRoundStart = CreateConVar("zr_noroundstart", "0", "Makes it so waves refuse to start or continune", FCVAR_DONTRECORD);
 	Cvar_VshMapFix = CreateConVar("zr_stripmaplogic", "0", "Strip maps of logic for ZR", FCVAR_DONTRECORD);
 	CvarNoSpecialZombieSpawn = CreateConVar("zr_nospecial", "0", "No Panzer will spawn or anything alike");
-	zr_voteconfig = CreateConVar("zr_voteconfig", "raidmode", "Vote config zr/ .cfg already included");
+	zr_voteconfig = CreateConVar("zr_voteconfig", "fastmode", "Vote config zr/ .cfg already included");
 	zr_tagblacklist = CreateConVar("zr_tagblacklist", "", "Tags to blacklist from weapons config");
 	zr_tagwhitelist = CreateConVar("zr_tagwhitelist", "", "Tags to whitelist from weapons config");
 	zr_tagwhitehard = CreateConVar("zr_tagwhitehard", "1", "If whitelist requires a tag instead of allowing");
@@ -67,9 +75,9 @@ void ConVar_PluginStart()
 	zr_smallmapbalancemulti = CreateConVar("zr_smallmapmulti", "1.0", "For small maps, so harder difficulities with alot of aoe can still be played.");
 	zr_disablerandomvillagerspawn = CreateConVar("zr_norandomvillager", "0.0", "Enable/Disable if medival villagers spawn randomly on the map or only on spawnpoints.");
 	zr_waitingtime = CreateConVar("zr_waitingtime", "120.0", "Waiting for players time.");
-	zr_enemymulticap = CreateConVar("zr_enemymulticap", "4.0", "Max enemy count multipler, will scale by health onwards", _, true, 0.5);
-	zr_multi_multiplier = CreateConVar("zr_multi_enemy", "1.0", "Multiply the current scaling");
-	zr_multi_maxcap = CreateConVar("zr_multi_zr_cap", "1.0", "Multiply the current max enemies allowed");
+	zr_maxscaling_untillhp = CreateConVar("zr_maxscaling_untillhp", "3.4", "Max enemy count multipler, will scale by health onwards", _, true, 0.5);
+	zr_multi_scaling = CreateConVar("zr_multi_scaling", "1.0", "Multiply the current scaling");
+	zr_multi_maxenemiesalive_cap = CreateConVar("zr_multi_maxenemiesalive_cap", "1.0", "Multiply the current max enemies allowed");
 	zr_raidmultihp = CreateConVar("zr_raidmultihp", "1.0", "Multiply any boss HP that acts as a raid or megaboss, usefull for certain maps.");
 	// MapSpawnersActive = CreateConVar("zr_spawnersactive", "4", "How many spawners are active by default,", _, true, 0.0, true, 32.0);
 	//CHECK npcs.sp FOR THIS ONE!
@@ -81,7 +89,6 @@ void ConVar_PluginStart()
 	CvarRogueSpecialLogic = CreateConVar("zr_roguespeciallogic", "0", "Incase your server wants to remove some restrictions off the roguemode.");
 	CvarLeveling = CreateConVar("zr_playerlevels", "1", "If player levels are enabled");
 	CvarAutoSelectWave = CreateConVar("zr_autoselectwave", "0", "If to automatically set a wave on map start instead of running a vote");
-	//CvarDebugOffset = CreateConVar("zr_debugOffsetSet", "0", "Do not use");
 
 	HookConVarChange(zr_tagblacklist, StoreCvarChanged);
 	HookConVarChange(zr_tagwhitelist, StoreCvarChanged);
@@ -123,6 +130,10 @@ void ConVar_PluginStart()
 	Cvar_clamp_back_speed = ConVar_Add("tf_clamp_back_speed", "0.7", false, (FCVAR_NOTIFY | FCVAR_REPLICATED));
 	Cvar_LoostFooting = ConVar_Add("tf_movement_lost_footing_friction", "0.1", false, (FCVAR_NOTIFY | FCVAR_REPLICATED));
 	ConVar_Add("sv_tags", "", false, (FCVAR_NOTIFY));
+	
+#if defined RPG	
+	AutoExecConfig(true, "zombie_riot");
+#endif
 }
 
 static ConVar ConVar_Add(const char[] name, const char[] value, bool enforce=true, int flagsremove = FCVAR_CHEAT)

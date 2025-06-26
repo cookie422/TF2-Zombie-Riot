@@ -246,9 +246,9 @@ public void XenoSoldier_ClotThink(int iNPC)
 				
 				
 				
-				NPC_SetGoalVector(npc.index, vPredictedPos);
+				npc.SetGoalVector(vPredictedPos);
 			} else {
-				NPC_SetGoalEntity(npc.index, PrimaryThreatIndex);
+				npc.SetGoalEntity(PrimaryThreatIndex);
 			}
 			
 			if(npc.m_flReloadIn && npc.m_flReloadIn<GetGameTime(npc.index))
@@ -279,11 +279,11 @@ public void XenoSoldier_ClotThink(int iNPC)
 						
 						PredictSubjectPositionForProjectiles(npc, PrimaryThreatIndex, projectile_speed,_,vecTarget);
 						
-						npc.FireRocket(vecTarget, 26.0, projectile_speed);
+						npc.FireRocket(vecTarget, 40.0, projectile_speed);
 						npc.m_flNextMeleeAttack = GetGameTime(npc.index) + 2.0;
 						npc.m_flReloadIn = GetGameTime(npc.index) + 1.0;
 					}
-					NPC_StopPathing(npc.index);
+					npc.StopPathing();
 					npc.m_bPathing = false;
 				}
 				else
@@ -300,7 +300,7 @@ public void XenoSoldier_ClotThink(int iNPC)
 	}
 	else
 	{
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		npc.m_flGetClosestTargetTime = 0.0;
 		npc.m_iTarget = GetClosestTarget(npc.index);

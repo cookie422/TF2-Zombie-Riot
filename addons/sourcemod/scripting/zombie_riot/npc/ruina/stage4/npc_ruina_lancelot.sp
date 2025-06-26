@@ -464,7 +464,7 @@ static void ClotThink(int iNPC)
 	}
 	else
 	{
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		npc.m_flGetClosestTargetTime = 0.0;
 		npc.m_iTarget = GetClosestTarget(npc.index);
@@ -508,7 +508,7 @@ static void Lancelot_Melee(Lancelot npc, float flDistanceToTarget, int PrimaryTh
 					float Kb = (npc.Anger ? 900.0 : 450.0);
 
 					Custom_Knockback(npc.index, target, Kb, true);
-					if(target < MaxClients)
+					if(target <= MaxClients)
 					{
 						TF2_AddCondition(target, TFCond_LostFooting, 0.5);
 						TF2_AddCondition(target, TFCond_AirCurrent, 0.5);
@@ -530,7 +530,7 @@ static void Lancelot_Melee(Lancelot npc, float flDistanceToTarget, int PrimaryTh
 			float vBackoffPos[3];
 			retreat = true;
 			BackoffFromOwnPositionAndAwayFromEnemy(npc, PrimaryThreatIndex,_,vBackoffPos);
-			NPC_SetGoalVector(npc.index, vBackoffPos, true);
+			npc.SetGoalVector(vBackoffPos, true);
 			npc.FaceTowards(vecTarget, 20000.0);
 			npc.m_flSpeed =  fl_npc_basespeed*RUINA_BACKWARDS_MOVEMENT_SPEED_PENALTY;
 		}
@@ -617,7 +617,7 @@ static void Get_Fake_Forward_Vec(float Range, float vecAngles[3], float Vec_Targ
 }
 static void Shake_dat_client(int entity, int victim, float damage, int weapon)
 {
-	if(victim < MaxClients)
+	if(victim <= MaxClients)
 		Client_Shake(victim, 0, 50.0, 30.0, 1.25);
 }
 static int i_targets_inrange;
@@ -665,8 +665,12 @@ static float Modify_Damage(Lancelot npc, int Target, float damage)
 	char classname[32];
 	GetEntityClassname(weapon, classname, 32);
 
-	int weapon_slot = TF2_GetClassnameSlot(classname);
-
+	int weapon_slot = TF2_GetClassnameSlot(classname, weapon);
+										
+	if(i_OverrideWeaponSlot[weapon] != -1)
+	{
+		weapon_slot = i_OverrideWeaponSlot[weapon];
+	}
 	if(weapon_slot != 2 || i_IsWandWeapon[weapon])
 		damage *= 1.7;
 

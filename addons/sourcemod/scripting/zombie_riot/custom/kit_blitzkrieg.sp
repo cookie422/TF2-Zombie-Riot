@@ -715,11 +715,11 @@ static void Blitzkrieg_Kit_ion_trace(int client, int patern, int weapon)
 	FinishLagCompensation_Base_boss();
 }
 
-static int i_colour[MAXTF2PLAYERS+1][4];
-static float fl_ion_chargeup[MAXTF2PLAYERS+1];
-static float fl_ion_loc[MAXTF2PLAYERS+1][3];
-static float fl_ion_throttle[MAXTF2PLAYERS+1];
-static float fl_ion_damage[MAXTF2PLAYERS+1];
+static int i_colour[MAXPLAYERS+1][4];
+static float fl_ion_chargeup[MAXPLAYERS+1];
+static float fl_ion_loc[MAXPLAYERS+1][3];
+static float fl_ion_throttle[MAXPLAYERS+1];
+static float fl_ion_damage[MAXPLAYERS+1];
 
 public void Blitzkrieg_Kit_IOC_Invoke(int client, float vecTarget[3], float ion_damage)	//Ion cannon from above
 {

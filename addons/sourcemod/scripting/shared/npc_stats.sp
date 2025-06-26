@@ -22,21 +22,21 @@ enum
 	NAV_MESH_WALK : Walk, do not avoid obstacles
 */
 
-int dieingstate[MAXTF2PLAYERS];
-int TeutonType[MAXTF2PLAYERS];
-bool EscapeModeForNpc;
+int dieingstate[MAXPLAYERS];
+int TeutonType[MAXPLAYERS];
 bool b_NpcHasBeenAddedToZombiesLeft[MAXENTITIES];
 int Zombies_Currently_Still_Ongoing;
 int RaidBossActive = INVALID_ENT_REFERENCE;					//Is the raidboss alive, if yes, what index is the raid?
 float Medival_Difficulty_Level = 0.0;
+int Medival_Difficulty_Level_NotMath = 0;
 bool b_ThisNpcIsImmuneToNuke[MAXENTITIES];
 int i_NpcOverrideAttacker[MAXENTITIES];
 bool b_thisNpcHasAnOutline[MAXENTITIES];
 
 #endif
-int i_KillsMade[MAXTF2PLAYERS];
-int i_Backstabs[MAXTF2PLAYERS];
-int i_Headshots[MAXTF2PLAYERS];	
+int i_KillsMade[MAXPLAYERS];
+int i_Backstabs[MAXPLAYERS];
+int i_Headshots[MAXPLAYERS];	
 
 #if !defined RTS
 int TeamFreeForAll = 50;
@@ -388,22 +388,16 @@ methodmap CClotBody < CBaseCombatCharacter
 		DispatchKeyValueVector(npc, "angles",	 vecAng);
 #if defined ZR
 		if(!ModelReplaceDo(npc, Ally))
+#endif
 		{
 			DispatchKeyValue(npc, "model",	 model);
 			view_as<CBaseCombatCharacter>(npc).SetModel(model);
 		}
-#endif
 		DispatchKeyValue(npc,	   "modelscale", modelscale);
 		if(NpcTypeLogic == NORMAL_NPC) //No need for lagcomp on things that dont even move.
 		{
 			DispatchKeyValue(npc,	   "health",	 health);
 		}
-		
-		DispatchKeyValue(npc, "shadowcastdist", "1");
-		DispatchKeyValue(npc, "disablereceiveshadows", "1");
-		DispatchKeyValue(npc, "disableshadows", "1");
-		DispatchKeyValue(npc, "disableshadowdepth", "1");
-		DispatchKeyValue(npc, "disableselfshadowing", "1");  
 		
 		i_IsNpcType[npc] = NpcTypeLogic;
 		f_LastBaseThinkTime[npc] = GetGameTime();
@@ -2377,7 +2371,7 @@ methodmap CClotBody < CBaseCombatCharacter
 			}
 		}
 	}
-	public void FaceTowards(float vecGoal[3], float turnrate = 250.0)
+	public void FaceTowards(float vecGoal[3], float turnrate = 250.0, bool TurnOnWalk = false)
 	{
 		//Sad!
 		//Dont use face towards, why?
@@ -2415,7 +2409,13 @@ methodmap CClotBody < CBaseCombatCharacter
 				angles.y += angleDiff;
 			}
 		*/
-		float deltaT = GetTickInterval();
+		float deltaT = 0.015;
+		//I am dumb, we accidentally made it scale with tickrate....
+		//facepalm.
+		if(TurnOnWalk)
+		{
+			deltaT = GetTickInterval();
+		}
 
 		float angles[3];
 		GetEntPropVector(this.index, Prop_Data, "m_angRotation", angles);
@@ -2528,13 +2528,6 @@ methodmap CClotBody < CBaseCombatCharacter
 		//	DispatchKeyValueFloat(item, "modelscale", GetEntPropFloat(this.index, Prop_Send, "m_flModelScale"));
 			DispatchKeyValueFloat(item, "modelscale", model_size);
 		}
-		/*
-		DispatchKeyValue(item, "shadowcastdist", "0");
-		DispatchKeyValue(item, "disablereceiveshadows", "1");
-		DispatchKeyValue(item, "disableshadows", "1");
-		DispatchKeyValue(item, "disableshadowdepth", "1");
-		DispatchKeyValue(item, "disableselfshadowing", "1");  
-		*/
 		DispatchSpawn(item);
 		SetEntProp(item, Prop_Send, "m_fEffects", EF_BONEMERGE|EF_PARENT_ANIMATES|EF_NOSHADOW );
 		SetEntityMoveType(item, MOVETYPE_NONE);
@@ -3356,6 +3349,7 @@ public void NPC_Base_InitGamedata()
 	GameData gamedata = LoadGameConfigFile("zombie_riot");
 	
 	DHook_CreateDetour(gamedata, "NextBotGroundLocomotion::UpdateGroundConstraint", Dhook_UpdateGroundConstraint_Pre, Dhook_UpdateGroundConstraint_Post);
+//	DHook_CreateDetour(gamedata, "CBaseAnimating::GetBoneCache", Dhook_BoneAnimPrintDo, _);
 	//this isnt directly the same function, but it should act the same.
 	
 	//SDKCalls
@@ -3749,396 +3743,6 @@ public void CBaseCombatCharacter_EventKilledLocal(int pThis, int iAttacker, int 
 #endif
 	}
 }
-
-
-void Npc_DoGibLogic(int pThis, float GibAmount = 1.0)
-{
-	CClotBody npc = view_as<CClotBody>(pThis);
-	float startPosition[3]; //This is what we use if we cannot find the correct name of said bone for this npc.
-				
-	float accurateposition[3]; //What we use if it has one.
-	float accurateAngle[3]; //What we use if it has one.
-	
-	float damageForce[3];
-	npc.m_vecpunchforce(damageForce, false);
-
-	bool Limit_Gibs = false;
-	if(CurrentGibCount > ZR_MAX_GIBCOUNT)
-	{
-		Limit_Gibs = true;
-	}
-
-	static int Main_Gib;
-	int GibAny;
-	
-	switch(npc.m_iBleedType)
-	{
-		case BLEEDTYPE_NORMAL:
-		{
-			npc.PlayGibSound();
-			if(npc.m_bIsGiant)
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 64;
-				Main_Gib = Place_Gib("models/gibs/antlion_gib_large_1.mdl", startPosition, _, damageForce, true, true);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 15;
-					GibAny = Place_Gib("models/Gibs/HGIBS_spine.mdl", startPosition, _, damageForce, false, true);
-					startPosition[2] += 44;
-					if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-					{
-						npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", accurateposition, accurateAngle, damageForce, false, true);	
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-					else
-					{
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", startPosition, _, damageForce, false, true);	
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}
-			else
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 42;
-				Main_Gib = Place_Gib("models/gibs/antlion_gib_large_1.mdl", startPosition, _, damageForce, true);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 10;
-					GibAny = Place_Gib("models/Gibs/HGIBS_spine.mdl", startPosition, _, damageForce);
-					startPosition[2] += 34;
-					if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-					{
-						npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", accurateposition, accurateAngle, damageForce);	
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-					else
-					{
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", startPosition, _, damageForce);	
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}	
-		}	
-		case BLEEDTYPE_METAL:
-		{
-			npc.PlayGibSoundMetal();
-			if(npc.m_bIsGiant)
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 64;
-				Main_Gib = Place_Gib("models/gibs/helicopter_brokenpiece_03.mdl", startPosition, _, damageForce, true, false, true, true); //dont gigantify this one.
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 15;
-					GibAny = Place_Gib("models/gibs/scanner_gib01.mdl", startPosition, _, damageForce, false, true, true);
-					startPosition[2] += 44;
-					if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-					{
-						npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-						GibAny = Place_Gib("models/gibs/metal_gib2.mdl", accurateposition, accurateAngle, damageForce, false, true, true);	
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-					else
-					{
-						GibAny = Place_Gib("models/gibs/metal_gib2.mdl", startPosition, _, damageForce, false, true, true);	
-						f_GibHealingAmount[GibAny] *= GibAmount;	
-					}
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}
-			else
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 42;
-				Main_Gib = Place_Gib("models/gibs/helicopter_brokenpiece_03.mdl", startPosition, _, damageForce, true, false, true, true, true);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 10;
-					GibAny = Place_Gib("models/gibs/scanner_gib01.mdl", startPosition, _, damageForce, false, false, true);
-					startPosition[2] += 34;
-					if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-					{
-						npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-						GibAny = Place_Gib("models/gibs/metal_gib2.mdl", accurateposition, accurateAngle, damageForce, false, false, true);
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-					else
-					{
-						GibAny = Place_Gib("models/gibs/metal_gib2.mdl", startPosition, _, damageForce, false, false, true);	
-						f_GibHealingAmount[GibAny] *= GibAmount;	
-					}
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}		
-		}
-		case BLEEDTYPE_XENO:
-		{
-			npc.PlayGibSound();
-			if(npc.m_bIsGiant)
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 64;
-				Main_Gib = Place_Gib("models/gibs/antlion_gib_large_1.mdl", startPosition, _, damageForce, true, true, _, _, _, 1);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 15;
-					GibAny = Place_Gib("models/Gibs/HGIBS_spine.mdl", startPosition, _, damageForce, false, true, _, _, _, 1);
-					startPosition[2] += 44;
-					if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-					{
-						npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", accurateposition, accurateAngle, damageForce, false, true, _, _, _, 1);	
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-					else
-					{
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", startPosition, _, damageForce, false, true, _, _, _, 1);		
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}
-			else
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 42;
-				Main_Gib = Place_Gib("models/gibs/antlion_gib_large_1.mdl", startPosition, _, damageForce, true, _, _, _, _, 1);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 10;
-					GibAny = Place_Gib("models/Gibs/HGIBS_spine.mdl", startPosition, _, damageForce, _, _, _, _, _, 1);
-					f_GibHealingAmount[GibAny] *= GibAmount;
-					startPosition[2] += 34;
-					if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-					{
-						npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", accurateposition, accurateAngle, damageForce, _, _, _, _, _, 1);
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-					else
-					{
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", startPosition, _, damageForce, _, _, _, _, _, 1);
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}	
-		}
-		case BLEEDTYPE_SKELETON:
-		{
-			npc.PlayGibSound();
-			if(npc.m_bIsGiant)
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 64;
-				GibAny = Place_Gib("models/bots/skeleton_sniper/skeleton_sniper_gib_head.mdl", startPosition, _, damageForce, false, true, _, _, _, false, true);
-				f_GibHealingAmount[GibAny] *= GibAmount;
-				startPosition[2] -= 15;
-				GibAny = Place_Gib("models/bots/skeleton_sniper/skeleton_sniper_gib_torso.mdl", startPosition, _, damageForce, false, true, _, _, _, false, true);
-				f_GibHealingAmount[GibAny] *= GibAmount;
-				startPosition[2] += 44;
-				if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-				{
-					npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-					GibAny = Place_Gib("models/bots/skeleton_sniper/skeleton_sniper_gib_head.mdl", accurateposition, accurateAngle, damageForce, false, true, _, _, _, false, true);	
-					f_GibHealingAmount[GibAny] *= GibAmount;
-				}
-				else
-				{
-					GibAny = Place_Gib("models/bots/skeleton_sniper/skeleton_sniper_gib_head.mdl", startPosition, _, damageForce, false, true, _, _, _, false, true);
-					f_GibHealingAmount[GibAny] *= GibAmount;		
-				}
-			}
-			else
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 42;
-				GibAny = Place_Gib("models/bots/skeleton_sniper/skeleton_sniper_gib_head.mdl", startPosition, _, damageForce, true, _, _, _, _, false, true);
-				f_GibHealingAmount[GibAny] *= GibAmount;
-				startPosition[2] -= 10;
-				GibAny = Place_Gib("models/bots/skeleton_sniper/skeleton_sniper_gib_torso.mdl", startPosition, _, damageForce, _, _, _, _, _, false, true);
-				f_GibHealingAmount[GibAny] *= GibAmount;
-				startPosition[2] += 34;
-				if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-				{
-					npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-					GibAny = Place_Gib("models/Gibs/HGIBS.mdl", accurateposition, accurateAngle, damageForce, _, _, _, _, _, false, true);
-					f_GibHealingAmount[GibAny] *= GibAmount;
-				}
-				else
-				{
-					GibAny = Place_Gib("models/Gibs/HGIBS.mdl", startPosition, _, damageForce, _, _, _, _, _, false, true);
-					f_GibHealingAmount[GibAny] *= GibAmount;
-				}
-			}	
-		}
-		case BLEEDTYPE_SEABORN:
-		{
-			npc.PlayGibSound();
-			if(npc.m_bIsGiant)
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 64;
-				Main_Gib = Place_Gib("models/gibs/antlion_gib_large_3.mdl", startPosition, _, damageForce, true, true, _, _, _, 2);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 15;
-					GibAny = Place_Gib("models/gibs/antlion_gib_medium_2.mdl", startPosition, _, damageForce, false, true, _, _, _, 2);
-					f_GibHealingAmount[GibAny] *= GibAmount;
-					startPosition[2] += 44;
-					GibAny = Place_Gib("models/gibs/antlion_gib_medium_1.mdl", startPosition, _, damageForce, false, true, _, _, _, 2);
-					f_GibHealingAmount[GibAny] *= GibAmount;
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}
-			else
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 42;
-				Main_Gib = Place_Gib("models/gibs/antlion_gib_large_3.mdl", startPosition, _, damageForce, true, _, _, _, _, 2);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 10;
-					GibAny = Place_Gib("models/gibs/antlion_gib_medium_2.mdl", startPosition, _, damageForce, _, _, _, _, _, 2);
-					f_GibHealingAmount[GibAny] *= GibAmount;
-					startPosition[2] += 34;
-					GibAny = Place_Gib("models/gibs/antlion_gib_medium_1.mdl", startPosition, _, damageForce, _, _, _, _, _, 2);
-					f_GibHealingAmount[GibAny] *= GibAmount;
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}	
-		}
-		case BLEEDTYPE_VOID:
-		{
-			npc.PlayGibSound();
-			if(npc.m_bIsGiant)
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 64;
-				Main_Gib = Place_Gib("models/gibs/antlion_gib_large_1.mdl", startPosition, _, damageForce, true, true, _, _, _, 3);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 15;
-					GibAny = Place_Gib("models/Gibs/HGIBS_spine.mdl", startPosition, _, damageForce, false, true, _, _, _, 3);
-					startPosition[2] += 44;
-					if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-					{
-						npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", accurateposition, accurateAngle, damageForce, false, true, _, _, _, 3);	
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-					else
-					{
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", startPosition, _, damageForce, false, true, _, _, _, 3);		
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}
-			else
-			{
-				GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
-				startPosition[2] += 42;
-				Main_Gib = Place_Gib("models/gibs/antlion_gib_large_1.mdl", startPosition, _, damageForce, true, _, _, _, _, 3);
-				f_GibHealingAmount[Main_Gib] *= GibAmount;
-				if(!Limit_Gibs)
-				{
-					startPosition[2] -= 10;
-					GibAny = Place_Gib("models/Gibs/HGIBS_spine.mdl", startPosition, _, damageForce, _, _, _, _, _, 3);
-					f_GibHealingAmount[GibAny] *= GibAmount;
-					startPosition[2] += 34;
-					if(c_HeadPlaceAttachmentGibName[npc.index][0] != 0)
-					{
-						npc.GetAttachment(c_HeadPlaceAttachmentGibName[npc.index], accurateposition, accurateAngle);
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", accurateposition, accurateAngle, damageForce, _, _, _, _, _, 3);
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-					else
-					{
-						GibAny = Place_Gib("models/Gibs/HGIBS.mdl", startPosition, _, damageForce, _, _, _, _, _, 3);
-						f_GibHealingAmount[GibAny] *= GibAmount;
-					}
-				}
-				else
-				{
-					if(IsValidEntity(Main_Gib))
-					{
-						f_GibHealingAmount[Main_Gib] *= 3.0;
-					}
-				}
-			}	
-		}
-	}
-}
 public void SetNpcToDeadViaGib(int pThis)
 {
 #if defined ZR
@@ -4300,28 +3904,6 @@ public MRESReturn CBaseAnimating_HandleAnimEvent(int pThis, Handle hParams)
 	}
 	return MRES_Ignored;
 }
-
-#if defined ZR || defined RPG
-stock void NPC_StartPathing(int entity)
-{
-	view_as<CClotBody>(entity).StartPathing();
-}
-
-stock void NPC_StopPathing(int entity)
-{
-	view_as<CClotBody>(entity).StopPathing();
-}
-
-stock void NPC_SetGoalVector(int entity, const float vec[3], bool ignore_time = false)
-{
-	view_as<CClotBody>(entity).SetGoalVector(vec, ignore_time);
-}
-
-stock void NPC_SetGoalEntity(int entity, int target)
-{
-	view_as<CClotBody>(entity).SetGoalEntity(target);
-}
-#endif
 
 stock bool IsLengthGreaterThan(float vector[3], float length)
 {
@@ -4620,7 +4202,7 @@ public int Action_CommandApproach(NextBotAction action, int actor, const float p
 		float pos2[3];
 		pos2 = pos;
 		if(!npc.m_bAllowBackWalking)
-			npc.FaceTowards(pos2, (500.0 * npc.GetDebuffPercentage() * f_NpcTurnPenalty[npc.index]));
+			npc.FaceTowards(pos2, (500.0 * npc.GetDebuffPercentage() * f_NpcTurnPenalty[npc.index]), true);
 	}
 	else
 	{
@@ -5025,8 +4607,9 @@ stock bool IsValidEnemy(int index, int enemy, bool camoDetection=false, bool tar
 			{
 				return false;
 			}
-			if(b_NpcIsInvulnerable[enemy] && !target_invul)
+			if(enemy > MaxClients && IsInvuln(enemy, true) && !target_invul)
 			{
+				//invlun check is only for npcs!
 				return false;
 			}
 
@@ -5853,6 +5436,51 @@ stock int IsSpaceOccupiedOnlyPlayers(const float pos[3], const float mins[3], co
 	return ref;
 }
 
+bool NpcGotStuck = false;
+stock void IsSpaceOccupiedOnlyPlayers_Cleave(const float pos[3], const float mins[3], const float maxs[3],int entity=-1,int &ref=-1)
+{
+	NpcGotStuck = false;
+	TR_TraceHullFilter(pos, pos, mins, maxs, MASK_NPCSOLID, TraceRayHitPlayersOnly_Cleave, entity);
+	//they got stuck, try to unstuck ONCE.
+	static float PosFiller[3];
+	static float MinsSave[3];
+	static float MaxsSave[3];
+	MinsSave = mins;
+	MaxsSave = maxs;
+	PosFiller = pos;
+//	TE_DrawBox(1, PosFiller, MinsSave, MaxsSave, 0.1, view_as<int>({255, 0, 0, 255}));
+	if(NpcGotStuck) 
+	{
+		Npc_Teleport_Safe(entity, PosFiller, MinsSave, MaxsSave);
+	}
+}
+//Should only try to collide with players.
+public bool TraceRayHitPlayersOnly_Cleave(int entity,int mask,any iExclude)
+{
+	if(!TraceRayHitPlayersOnly(entity,mask,iExclude))
+	{
+		return false;
+	}
+	NpcGotStuck = true;
+	if(entity)
+	{
+		//first recorded instance of getting stuck after 2 seconds of nnot being stuck.
+		if(f_AntiStuckPhaseThroughFirstCheck[entity] < GetGameTime() + 1.0)
+		{
+			//if still stuck after 1 second...
+			f_AntiStuckPhaseThrough[entity] = GetGameTime() + 1.0;
+			ApplyStatusEffect(entity, entity, "Intangible", 1.0);
+			//give them 2 seconds to unstuck themselves
+		}
+		if(f_AntiStuckPhaseThroughFirstCheck[entity] < GetGameTime())
+		{
+			f_AntiStuckPhaseThroughFirstCheck[entity] = GetGameTime() + 2.0;
+		}
+	}
+
+	return false;
+}
+
 public bool TraceRayHitPlayers(int entity,int mask,any data)
 {
 	if (entity == 0) return true;
@@ -5994,7 +5622,7 @@ public void NpcBaseThinkPost(int iNPC)
 	static float SimulationTimeDelay;
 	if(!SimulationTimeDelay)
 	{
-		SimulationTimeDelay = (0.05 * TickrateModify);
+		SimulationTimeDelay = (0.05/* * TickrateModify*/);
 		//calc once
 	}
 	SetEntPropFloat(iNPC, Prop_Data, "m_flSimulationTime",GetGameTime() + SimulationTimeDelay);
@@ -6225,12 +5853,15 @@ public void NpcBaseThink(int iNPC)
 		HealEntityGlobal(iNPC, iNPC, float(i_HpRegenInBattle[iNPC]), 1.0, 0.0, HEAL_SELFHEAL | HEAL_PASSIVE_NO_NOTIF);
 		RPGNpc_UpdateHpHud(iNPC);
 	}
+#endif
 	if(f_InBattleDelay[iNPC] < GetGameTime())
 	{
-		f_InBattleDelay[iNPC] = GetGameTime() + 0.25;
+		StatusEffect_TimerCallDo(iNPC);
+		f_InBattleDelay[iNPC] = GetGameTime() + 0.4;
+#if defined RPG
 		HealOutOfBattleNpc(iNPC);
-	}
 #endif
+	}
 
 	if(CvarDisableThink.BoolValue)
 		return;
@@ -6324,26 +5955,17 @@ public void NpcOutOfBounds(CClotBody npc, int iNPC)
 				hullcheckmaxs_Player = view_as<float>( { 24.0, 24.0, 82.0 } );
 				hullcheckmins_Player = view_as<float>( { -24.0, -24.0, 0.0 } );			
 			}
-		
-			int Hit_player = IsSpaceOccupiedOnlyPlayers(flMyPos, hullcheckmins_Player, hullcheckmaxs_Player, iNPC);
-			if (Hit_player) //The boss will start to merge with player, STOP!
-			{
-				Npc_Teleport_Safe(iNPC, flMyPos, hullcheckmins_Player, hullcheckmaxs_Player);
+			hullcheckmins_Player[0] += 2.0;
+			hullcheckmins_Player[1] += 2.0;
 
-				//first recorded instance of getting stuck after 2 seconds of nnot being stuck.
-				if(f_AntiStuckPhaseThroughFirstCheck[Hit_player] < GetGameTime())
-				{
-					f_AntiStuckPhaseThroughFirstCheck[Hit_player] = GetGameTime() + 2.0;
-				}
-				else if(f_AntiStuckPhaseThroughFirstCheck[Hit_player] < GetGameTime() + 1.0)
-				{
-					//if still stuck after 1 second...
-					f_AntiStuckPhaseThrough[Hit_player] = GetGameTime() + 1.0;
-					ApplyStatusEffect(Hit_player, Hit_player, "Intangible", 1.0);
-					//give them 2 seconds to unstuck themselves
-				}
-			}
-			//This is a temporary fix. find a better one for players getting stuck.
+			hullcheckmaxs_Player[0] -= 2.0;
+			hullcheckmaxs_Player[1] -= 2.0;
+			hullcheckmaxs_Player[2] -= 2.0;
+			//only if they are outright stuck inside them !!
+
+			//this unstucks all players that are inside npcs, instead of just one!
+			IsSpaceOccupiedOnlyPlayers_Cleave(flMyPos, hullcheckmins_Player, hullcheckmaxs_Player, iNPC);
+
 		}
 	}
 #if defined ZR
@@ -6969,148 +6591,211 @@ public int Can_I_See_Ally(int attacker, int ally)
 	return Traced_Target;
 }
 
-int Place_Gib(const char[] model, float pos[3],float ang[3] = {0.0,0.0,0.0}, float vel[3], bool Reduce_masively_Weight = false, bool big_gibs = false, bool metal_colour = false, bool Rotate = false, bool smaller_gibs = false, int BleedType = 0, bool nobleed = false)
+static char m_cGibModelDefault[][] =
 {
-	int prop = CreateEntityByName("prop_physics_multiplayer");
-	if(!IsValidEntity(prop))
-		return -1;
-	DispatchKeyValue(prop, "model", model);
-	DispatchKeyValue(prop, "physicsmode", "2");
-	DispatchKeyValue(prop, "massScale", "1.0");
-	DispatchKeyValue(prop, "spawnflags", "2");
+	"models/gibs/antlion_gib_large_1.mdl",
+	"models/Gibs/HGIBS_spine.mdl",
+	"models/Gibs/HGIBS.mdl"
+};
+static char m_cGibModelMetal[][] =
+{
+	"models/gibs/helicopter_brokenpiece_03.mdl",
+	"models/gibs/scanner_gib01.mdl",
+	"models/gibs/metal_gib2.mdl"
+};
+void Npc_DoGibLogic(int pThis, float GibAmount = 1.0)
+{
+	CClotBody npc = view_as<CClotBody>(pThis);
+	if(npc.m_iBleedType == 0)
+		return;
 
-/*
-	TF2_CreateGlow(prop, model, client, color);
+	float startPosition[3];
+				
+	float damageForce[3];
+	npc.m_vecpunchforce(damageForce, false);
+	ScaleVector(damageForce, 0.025); //Reduce overall
 
-	char buffer[16];
-	FormatEx(buffer, sizeof(buffer), "rpg_item_%d", index);
-	DispatchKeyValue(prop, "targetname", buffer);
+	bool Limit_Gibs = false;
+	if(CurrentGibCount > ZR_MAX_GIBCOUNT)
+	{
+		Limit_Gibs = true;
+	}
+	if(EnableSilentMode)
+		Limit_Gibs = true;
 
-	static float vel[3];
-	vel[0] = GetRandomFloat(-160.0, 160.0);
-	vel[1] = GetRandomFloat(-160.0, 160.0);
-	vel[2] = GetRandomFloat(0.0, 160.0);
-	pos[2] += 20.0;
-	*/
-	/*
-	Pow(vel[0], 0.5);
-	Pow(vel[1], 0.5);
-	Pow(vel[2], 0.5);
-	*/
-	f_GibHealingAmount[prop] = 1.0; //Set it to false by default first.
-	CurrentGibCount += 1;
-	if(big_gibs)
-	{
-		DispatchKeyValue(prop, "modelscale", "1.6");
-	}
-	if(smaller_gibs)
-	{
-		DispatchKeyValue(prop, "modelscale", "0.8");
-	}
-	
-	if(Reduce_masively_Weight)
-		ScaleVector(vel, 0.02);
-		
-	if(ang[0] != 0.0)
-	{
-		if(!Rotate)
-		{
-			ang[0] = 0.0;
-			ang[1] = 0.0;
-			ang[2] = 0.0;
-		//	TeleportEntity(prop, pos, NULL_VECTOR, NULL_VECTOR);
-		}
-		else
-		{
-			ang[0] = 90.0;
-			ang[1] = 0.0;
-			ang[2] = 0.0;
-	//		TeleportEntity(prop, pos, {90.0,0.0,0.0}, NULL_VECTOR);
-		}
-	}
-	else
-	{
-		if(!Rotate)
-		{
-		//	TeleportEntity(prop, pos, ang, NULL_VECTOR);
-		}
-		else
-		{
-			ang[0] += 90.0;
-		//	TeleportEntity(prop, pos, ang, NULL_VECTOR);
-		}		
-		
-	}
-	DispatchKeyValueVector(prop, "origin",	 pos);
-	DispatchKeyValueVector(prop, "angles",	 ang);
-	DispatchSpawn(prop);
-	TeleportEntity(prop, NULL_VECTOR, NULL_VECTOR, vel);
+	if(npc.m_iBleedType == BLEEDTYPE_METAL)
+		npc.PlayGibSoundMetal();
+	else if(npc.m_iBleedType != BLEEDTYPE_RUBBER)
+		npc.PlayGibSound();
 
-	float Random_time = GetRandomFloat(6.0, 7.0);
-	if(CurrentGibCount > ZR_MAX_GIBCOUNT_ABSOLUTE)
+
+	GetEntPropVector(npc.index, Prop_Data, "m_vecAbsOrigin", startPosition);
+				
+	for(int GibLoop; GibLoop < 3; GibLoop++)
 	{
-		Random_time *= 0.5; //half the duration if there are too many gibs
-	}
-#if defined RPG
-	Random_time *= 0.25; //in RPG, gibs are really not needed as they are purpely cosmetic, for this reason they wont stay long at all.
-#endif
-	SetEntityCollisionGroup(prop, 2); //COLLISION_GROUP_DEBRIS_TRIGGER
-	
-	b_IsAGib[prop] = true;
-	
-	if (!nobleed)
-	{
-		if(!metal_colour)
+		int prop = CreateEntityByName("prop_physics_multiplayer");
+		if(!IsValidEntity(prop))
+			return; //Emergency backup
+		float TempPosition[3];
+		float TempForce[3];
+
+		TempPosition = startPosition;
+
+		switch(GibLoop)
 		{
-			if(BleedType == 0)
+			case 0:
 			{
-				if(!EnableSilentMode)
-				{
-					int particle = ParticleEffectAt(pos, "blood_trail_red_01_goop", Random_time); //This is a permanent particle, gotta delete it manually...
-					SetParent(prop, particle);
-				}
-				SetEntityRenderColor(prop, 255, 0, 0, 255);
+				//main torso
+				if(!npc.m_bIsGiant)
+					TempPosition[2] += 42;
+				else
+					TempPosition[2] += 64;
+
 			}
-			else if(BleedType == 2)
+			case 1:
 			{
-				if(!EnableSilentMode)
-				{
-					int particle = ParticleEffectAt(pos, "flamethrower_rainbow_bubbles02", Random_time); //This is a permanent particle, gotta delete it manually...
-					SetParent(prop, particle);
-				}
-				SetEntityRenderColor(prop, 65, 65, 255, 255);				
+				//Spine, or something
+				if(!npc.m_bIsGiant)
+					TempPosition[2] += 30;
+				else
+					TempPosition[2] += 49;
 			}
-			else if(BleedType == 3)
+			case 2:
 			{
-				if(!EnableSilentMode)
-				{
-					int particle = ParticleEffectAt(pos, "doublejump_trail_alt", Random_time); //This is a permanent particle, gotta delete it manually...
-					SetParent(prop, particle);
-				}
-				SetEntityRenderColor(prop, 200, 0, 200, 255);
+				//Head
+				if(!npc.m_bIsGiant)
+					TempPosition[2] += 75;
+				else
+					TempPosition[2] += 110;
+			}
+		}
+		TempForce = damageForce;
+		if(GibLoop == 0 && npc.m_iBleedType == BLEEDTYPE_NORMAL)
+			ScaleVector(TempForce, 0.4);
+		//This gib in specific has too much knockback.
+
+		if(npc.m_iBleedType == BLEEDTYPE_METAL)
+			DispatchKeyValue(prop, "model", m_cGibModelMetal[GibLoop]);
+		else
+			DispatchKeyValue(prop, "model", m_cGibModelDefault[GibLoop]);
+
+		DispatchKeyValue(prop, "physicsmode", "2");
+		DispatchKeyValue(prop, "massScale", "1.0");
+		DispatchKeyValue(prop, "spawnflags", "2");
+		if(npc.m_bIsGiant)
+		{
+			if(npc.m_iBleedType == BLEEDTYPE_METAL && GibLoop == 0)
+			{
+				DispatchKeyValue(prop, "modelscale", "1.1");
 			}
 			else
-			{
-				if(!EnableSilentMode)
-				{
-					int particle = ParticleEffectAt(pos, "blood_impact_green_01", Random_time); //This is a permanent particle, gotta delete it manually...
-					SetParent(prop, particle);
-				}
-				SetEntityRenderColor(prop, 0, 255, 0, 255);
-			}
+				DispatchKeyValue(prop, "modelscale", "1.6");
 		}
 		else
 		{
-	//		pos[2] -= 40.0;
-			int particle = ParticleEffectAt(pos, "tpdamage_4", Random_time); //This is a permanent particle, gotta delete it manually...
-			SetParent(prop, particle);
+			if(npc.m_iBleedType == BLEEDTYPE_METAL && GibLoop == 0)
+			{
+				DispatchKeyValue(prop, "modelscale", "0.8");
+			}
 		}
+
+		float Random_time = GetRandomFloat(6.0, 7.0);
+		if(EnableSilentMode || CurrentGibCount > ZR_MAX_GIBCOUNT_ABSOLUTE)
+		{
+			Random_time *= 0.5; //half the duration if there are too many gibs
+		}
+#if defined RPG
+		Random_time *= 0.25; //in RPG, gibs are really not needed as they are purpely cosmetic, for this reason they wont stay long at all.
+#endif
+		f_GibHealingAmount[prop] = 1.0 * GibAmount; //Set it to false by default first.
+		if(Limit_Gibs)	
+			f_GibHealingAmount[prop] *= 3.0;
+
+		if(b_thisNpcIsABoss[pThis] || b_thisNpcIsARaid[pThis])
+		{
+			f_GibHealingAmount[prop] *= 4.0;
+		}
+		else if(b_IsGiant[pThis])
+		{
+			f_GibHealingAmount[prop] *= 2.0;
+		}
+
+		float ang[3];
+		switch(GibLoop)
+		{
+			case 0:
+			{
+				if(npc.m_iBleedType == BLEEDTYPE_METAL)
+					ang[0] = 90.0;
+			}
+		}
+		CurrentGibCount += 1;
+		DispatchKeyValueVector(prop, "origin",	 TempPosition);
+		DispatchKeyValueVector(prop, "angles",	 ang);
+		DispatchSpawn(prop);
+		TeleportEntity(prop, NULL_VECTOR, NULL_VECTOR, TempForce);
+		SetEntityCollisionGroup(prop, 2); //COLLISION_GROUP_DEBRIS_TRIGGER
+		CreateTimer(Random_time - 1.5, Prop_Gib_FadeSet, EntIndexToEntRef(prop), TIMER_FLAG_NO_MAPCHANGE);
+		CreateTimer(Random_time, Timer_RemoveEntity_Prop_Gib, EntIndexToEntRef(prop), TIMER_FLAG_NO_MAPCHANGE);
+
+		Random_time -= 1.0;
+		int ParticleSet = -1;
+		switch(npc.m_iBleedType)
+		{
+			case BLEEDTYPE_NORMAL:
+			{
+				if(!EnableSilentMode)
+					ParticleSet = ParticleEffectAt(TempPosition, "blood_trail_red_01_goop", Random_time); 
+				SetEntityRenderMode(prop, RENDER_TRANSCOLOR);
+				SetEntityRenderColor(prop, 255, 0, 0, 255);
+			}
+			case BLEEDTYPE_METAL:
+			{
+				if(!EnableSilentMode)
+					ParticleSet = ParticleEffectAt(TempPosition, "tpdamage_4", Random_time); 
+			}
+			case BLEEDTYPE_RUBBER:
+			{
+				if(!EnableSilentMode)
+					ParticleSet = ParticleEffectAt(TempPosition, "doublejump_trail_alt", Random_time); //This is a permanent particle, gotta delete it manually...
+			}
+			case BLEEDTYPE_XENO:
+			{
+				if(!EnableSilentMode)
+					ParticleSet = ParticleEffectAt(TempPosition, "blood_impact_green_01", Random_time); 
+				SetEntityRenderMode(prop, RENDER_TRANSCOLOR);
+				SetEntityRenderColor(prop, 0, 255, 0, 255);
+			}
+			case BLEEDTYPE_SKELETON:
+			{
+				//insert.
+			}
+			case BLEEDTYPE_SEABORN:
+			{
+				if(!EnableSilentMode)
+					ParticleSet = ParticleEffectAt(TempPosition, "flamethrower_rainbow_bubbles02", Random_time); 
+				SetEntityRenderMode(prop, RENDER_TRANSCOLOR);
+				SetEntityRenderColor(prop, 65, 65, 255, 255);
+			}
+			case BLEEDTYPE_VOID:
+			{
+				if(!EnableSilentMode)
+				{
+					TE_BloodSprite(TempPosition, { 0.0, 0.0, 0.0 }, 200, 0, 200, 255, 32);
+					TE_SendToAllInRange(TempPosition, RangeType_Visibility);
+				}
+				SetEntityRenderMode(prop, RENDER_TRANSCOLOR);
+				SetEntityRenderColor(prop, 200, 0, 200, 255);
+			}
+		}	
+		if(ParticleSet != -1)
+		{
+			SetParent(prop, ParticleSet);
+		}
+		b_IsAGib[prop] = true;
+		if(Limit_Gibs)
+			return; //only spawn 1 gib.
 	}
-	
-	CreateTimer(Random_time - 1.5, Prop_Gib_FadeSet, EntIndexToEntRef(prop), TIMER_FLAG_NO_MAPCHANGE);
-	CreateTimer(Random_time, Timer_RemoveEntity_Prop_Gib, EntIndexToEntRef(prop), TIMER_FLAG_NO_MAPCHANGE);
-//	CreateTimer(1.5, Timer_DisableMotion, EntIndexToEntRef(prop), TIMER_FLAG_NO_MAPCHANGE);
-	return prop;
 }
 
 #if defined ZR
@@ -8657,7 +8342,7 @@ public void NPCStats_SetFuncsToZero(int entity)
 }
 public void SetDefaultValuesToZeroNPC(int entity)
 {
-	StatusEffectReset(entity);
+	StatusEffectReset(entity, true);
 #if defined ZR
 	b_NpcHasBeenAddedToZombiesLeft[entity] = false;
 	i_SpawnProtectionEntity[entity] = -1; 
@@ -9018,8 +8703,20 @@ public MRESReturn Rocket_Particle_DHook_RocketExplodePre(int entity)
 {
 	return MRES_Supercede;	//Don't even think about it mate
 }
-
-
+/*
+public MRESReturn Dhook_BoneAnimPrintDo(int entity, DHookReturn ret)
+{
+	if(b_IsInUpdateGroundConstraintLogic)
+	{
+		static char buffer[64];
+		GetEntityClassname(entity, buffer, sizeof(buffer));
+		char model[256];
+		CBaseEntity(entity).GetModelName(model, sizeof(model));
+		PrintToServer("[RPG DEBUG] Dhook_BoneAnimPrintDo Entity: %i| Classname %s | Model Mame %s",entity, buffer, model);
+	}
+	return MRES_Ignored;
+}
+*/
 public MRESReturn Dhook_UpdateGroundConstraint_Pre(DHookParam param)
 {
 	b_IsInUpdateGroundConstraintLogic = true;
@@ -9418,7 +9115,8 @@ stock void FreezeNpcInTime(int npc, float Duration_Stun, bool IgnoreAllLogic = f
 		}
 		if(HasSpecificBuff(npc, "Dimensional Turbulence"))
 			Duration_Stun *= 0.25;
-		TF2_AddCondition(npc, TFCond_FreezeInput, Duration_Stun);
+		
+		TF2_StunPlayer(npc, Duration_Stun, 1.0, TF_STUNFLAGS_NORMALBONK);
 		ApplyStatusEffect(npc, npc, "Stunned", Duration_Stun);	
 		return;
 	}
@@ -10713,7 +10411,7 @@ Handle Timer_Ingition_Settings[MAXENTITIES] = {INVALID_HANDLE, ...};
 Handle Timer_Ingition_ReApply[MAXENTITIES] = {INVALID_HANDLE, ...};
 float Reapply_BurningCorpse[MAXENTITIES];
 
-void IgniteTargetEffect(int target, int ViewmodelSetting = 0, int viewmodelClient = 0)
+void IgniteTargetEffect(int target, int ViewmodelSetting = 0, int viewmodelClient = 0, bool type = false)
 {
 	Reapply_BurningCorpse[target] = GetGameTime() + 5.0;
 	if(ViewmodelSetting > 0)
@@ -10730,11 +10428,11 @@ void IgniteTargetEffect(int target, int ViewmodelSetting = 0, int viewmodelClien
 		pack.WriteCell(EntIndexToEntRef(target));
 		pack.WriteCell(ViewmodelSetting);
 		pack.WriteCell(viewmodelClient);
-
+		pack.WriteCell(type);
 	}
 	else
 	{
-		TE_SetupParticleEffect("burningplayer_corpse", PATTACH_ABSORIGIN_FOLLOW, target);
+		TE_SetupParticleEffect(type ? "halloween_burningplayer_flyingbits" : "burningplayer_corpse", PATTACH_ABSORIGIN_FOLLOW, target);
 		TE_WriteNum("m_bControlPoint1", target);	
 		TE_SendToAll();
 		if(Timer_Ingition_ReApply[target] != null)
@@ -10743,9 +10441,10 @@ void IgniteTargetEffect(int target, int ViewmodelSetting = 0, int viewmodelClien
 			Timer_Ingition_ReApply[target] = null;
 		}		
 		DataPack pack;
-		Timer_Ingition_ReApply[target] = CreateDataTimer(5.0, IgniteTimerVisual_Reignite, pack);
+		Timer_Ingition_ReApply[target] = CreateDataTimer(type ? 1.5 : 5.0, IgniteTimerVisual_Reignite, pack);
 		pack.WriteCell(target);
 		pack.WriteCell(EntIndexToEntRef(target));
+		pack.WriteCell(type);
 	}
 }
 
@@ -10758,10 +10457,11 @@ public Action IgniteTimerVisual_Reignite(Handle timer, DataPack pack)
 	{
 		Timer_Ingition_ReApply[targetoriginal] = null;
 		return Plugin_Continue;
-	}	
+	}
+	bool type = pack.ReadCell();
 	ExtinguishTarget(target, true);
 	Timer_Ingition_ReApply[targetoriginal] = null;
-	IgniteTargetEffect(target);
+	IgniteTargetEffect(target, _, _, type);
 	return Plugin_Continue;
 }
 public Action IgniteTimerVisual(Handle timer, DataPack pack)
@@ -10776,6 +10476,7 @@ public Action IgniteTimerVisual(Handle timer, DataPack pack)
 	}	
 	int InvisMode = pack.ReadCell();
 	int ownerclient = pack.ReadCell();
+	bool type = pack.ReadCell();
 	for( int client = 1; client <= MaxClients; client++ ) 
 	{
 		if (IsValidClient(client))
@@ -10784,18 +10485,18 @@ public Action IgniteTimerVisual(Handle timer, DataPack pack)
 			if(Reapply_BurningCorpse[target] < GetGameTime())
 			{
 				Reapply_BurningCorpse[target] = GetGameTime() + 5.0;
-				IngiteTargetClientside(target, client, false);
+				IngiteTargetClientside(target, client, false, type);
 			}
 			if(b_FirstPersonUsesWorldModel[client])
 			{
 				//always ignited.
 				if(InvisMode == THIRDPERSON)
 				{
-					IngiteTargetClientside(target, client, true);
+					IngiteTargetClientside(target, client, true, type);
 				}
 				else
 				{
-					IngiteTargetClientside(target, client, false);
+					IngiteTargetClientside(target, client, false, type);
 				}
 				continue;		
 			}
@@ -10807,11 +10508,11 @@ public Action IgniteTimerVisual(Handle timer, DataPack pack)
 					//its invis in third person
 					if(InvisMode == THIRDPERSON)
 					{
-						IngiteTargetClientside(target, client, false);
+						IngiteTargetClientside(target, client, false, type);
 					}
 					else
 					{
-						IngiteTargetClientside(target, client, true);
+						IngiteTargetClientside(target, client, true, type);
 					}
 					continue;		
 				}
@@ -10819,11 +10520,11 @@ public Action IgniteTimerVisual(Handle timer, DataPack pack)
 				{
 					if(InvisMode == THIRDPERSON)
 					{
-						IngiteTargetClientside(target, client, true);
+						IngiteTargetClientside(target, client, true, type);
 					}
 					else
 					{
-						IngiteTargetClientside(target, client, false);
+						IngiteTargetClientside(target, client, false, type);
 					}
 					continue;	
 				}
@@ -10835,21 +10536,21 @@ public Action IgniteTimerVisual(Handle timer, DataPack pack)
 				*/
 				if(InvisMode == THIRDPERSON)
 				{
-					IngiteTargetClientside(target, client, false);
+					IngiteTargetClientside(target, client, false, type);
 				}
 				else
 				{
-					IngiteTargetClientside(target, client, true);
+					IngiteTargetClientside(target, client, true, type);
 				}
 				continue;	
 			}
 			if(InvisMode == THIRDPERSON)
 			{
-				IngiteTargetClientside(target, client, true);
+				IngiteTargetClientside(target, client, true, type);
 			}
 			else
 			{
-				IngiteTargetClientside(target, client, false);
+				IngiteTargetClientside(target, client, false, type);
 			}
 		}
 	}
@@ -10858,12 +10559,12 @@ public Action IgniteTimerVisual(Handle timer, DataPack pack)
 
 
 
-void IngiteTargetClientside(int target, int client, bool ingite)
+void IngiteTargetClientside(int target, int client, bool ingite, bool type)
 {
 	if(ingite && !IsIn_HitDetectionCooldown(target,client, IgniteClientside))
 	{
 		Set_HitDetectionCooldown(target,client, FAR_FUTURE, IgniteClientside);
-		TE_SetupParticleEffect("burningplayer_corpse", PATTACH_ABSORIGIN_FOLLOW, target);
+		TE_SetupParticleEffect(type ? "halloween_burningplayer_flyingbits" : "burningplayer_corpse", PATTACH_ABSORIGIN_FOLLOW, target);
 		TE_WriteNum("m_bControlPoint1", target);	
 		TE_SendToClient(client);
 	}
@@ -10875,7 +10576,7 @@ void IngiteTargetClientside(int target, int client, bool ingite)
 		if(target > 0)
 			TE_WriteNum("entindex", target);
 		
-		TE_WriteNum("m_nHitBox", GetParticleEffectIndex("burningplayer_corpse"));
+		TE_WriteNum("m_nHitBox", GetParticleEffectIndex(type ? "halloween_burningplayer_flyingbits" : "burningplayer_corpse"));
 		TE_WriteNum("m_iEffectName", GetEffectIndex("ParticleEffectStop"));
 		TE_SendToClient(client);	
 	}
@@ -10921,7 +10622,7 @@ void IsEntityInvincible_Shield(int entity)
 	if(i_npcspawnprotection[entity] == 1)
 		NpcInvulShieldDisplay = 2;
 #endif
-	if(b_NpcIsInvulnerable[entity])
+	if(IsInvuln(entity, true))
 		NpcInvulShieldDisplay = 1;
 	
 	CClotBody npc = view_as<CClotBody>(entity);
@@ -11021,7 +10722,7 @@ void MakeObjectIntangeable(int entity)
 }
 
 
-static int BadSpotPoints[MAXTF2PLAYERS];
+static int BadSpotPoints[MAXPLAYERS];
 stock void Spawns_CheckBadClient(int client/*, int checkextralogic = 0*/)
 {
 #if defined ZR
@@ -11160,7 +10861,7 @@ void ResetAllArmorStatues(int entiity)
 }
 
 stock void GrantEntityArmor(int entity, bool Once = true, float ScaleMaxHealth, float ArmorProtect, int ArmorType,
-float custom_maxarmour = 0.0)
+float custom_maxarmour = 0.0, int ArmorGiver = -1)
 {
 	CClotBody npc = view_as<CClotBody>(entity);
 	if(Once)
@@ -11207,6 +10908,10 @@ float custom_maxarmour = 0.0)
 			npc.m_flArmorCountMax = npc.m_flArmorCount;
 	}
 	
+	if(ArmorGiver > 0 && custom_maxarmour > 0.0)
+	{
+		ApplyArmorEvent(entity, RoundToNearest(custom_maxarmour), ArmorGiver);
+	}
 	//any extra logic please add here. deivid.
 }
 

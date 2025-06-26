@@ -1,7 +1,7 @@
 #pragma semicolon 1
 #pragma newdecls required
 
-float Perk_Machine_Sickness[MAXTF2PLAYERS];
+float Perk_Machine_Sickness[MAXPLAYERS];
 void ObjectPerkMachine_MapStart()
 {
 	PrecacheModel("models/props_farm/welding_machine01.mdl");
@@ -62,8 +62,10 @@ static void ClotShowInteractHud(ObjectPerkMachine npc, int client)
 {
 	SetGlobalTransTarget(client);
 	char ButtonDisplay[255];
+	char ButtonDisplay2[255];
 	PlayerHasInteract(client, ButtonDisplay, sizeof(ButtonDisplay));
-	PrintCenterText(client, "%s%t", ButtonDisplay,"Perkmachine Tooltip");
+	BuildingVialityDisplay(client, npc.index, ButtonDisplay2, sizeof(ButtonDisplay2));
+	PrintCenterText(client, "%s\n%s%t", ButtonDisplay2, ButtonDisplay,"Perkmachine Tooltip");
 }
 
 static bool ClotInteract(int client, int weapon, ObjectPerkMachine npc)

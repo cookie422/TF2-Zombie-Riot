@@ -29,8 +29,8 @@ static Function FuncCanBuild[MAXENTITIES];
 //static Function FuncShowInteractHud[MAXENTITIES];
 
 static int Building_Max_Health[MAXENTITIES]={0, ...};
-static bool CanUseBuilding[MAXENTITIES][MAXTF2PLAYERS];
-int i_MachineJustClickedOn[MAXTF2PLAYERS];
+static bool CanUseBuilding[MAXENTITIES][MAXPLAYERS];
+int i_MachineJustClickedOn[MAXPLAYERS];
 static float RotateByDefault[MAXENTITIES]={0.0, ...};
 int Building_BuildingBeingCarried[MAXENTITIES];
 float f_DamageTakenFloatObj[MAXENTITIES];
@@ -38,8 +38,8 @@ int OwnerOfText[MAXENTITIES];
 
 //Performance improvement, no need to check this littearlly every fucking frame
 //other things DO need it, but not this.
-float f_TransmitDelayCheck[MAXENTITIES][MAXTF2PLAYERS];
-Action b_TransmitBiasDo[MAXENTITIES][MAXTF2PLAYERS];
+float f_TransmitDelayCheck[MAXENTITIES][MAXPLAYERS];
+Action b_TransmitBiasDo[MAXENTITIES][MAXPLAYERS];
 
 int i_NormalBarracks_HexBarracksUpgrades_2[MAXENTITIES];
 
@@ -87,6 +87,7 @@ void Object_PluginStart()
 	.DefineIntField("m_iMaxHealth")
 	.DefineBoolField("m_bSentryBuilding")
 	.DefineBoolField("m_bConstructBuilding")
+	.DefineFloatField("m_fLastTimeClaimed")
 	.EndDataMapDesc();
 	factory.Install();
 }
@@ -451,6 +452,17 @@ methodmap ObjectGeneric < CClotBody
 			return view_as<bool>(GetEntProp(this.index, Prop_Data, "m_bSentryBuilding"));
 		}
 	}
+	property float LastTimeClaimed
+	{
+		public set(float value)
+		{
+			SetEntPropFloat(this.index, Prop_Data, "m_fLastTimeClaimed", value);
+		}
+		public get()
+		{
+			return GetEntPropFloat(this.index, Prop_Data, "m_fLastTimeClaimed");
+		}
+	}
 	property bool m_bConstructBuilding
 	{
 		public set(bool value)
@@ -515,17 +527,6 @@ public Action SetTransmit_BuildingReady(int entity, int client)
 	b_TransmitBiasDo[entity][client] = SetTransmit_BuildingShared(entity, client, false);
 	return b_TransmitBiasDo[entity][client];
 }
-public Action SetTransmit_BuildingReadyTestThirdPersonIgnore(int entity, int client)
-{
-	if(f_TransmitDelayCheck[entity][client] > GetGameTime())
-	{
-		return b_TransmitBiasDo[entity][client];
-	}
-	f_TransmitDelayCheck[entity][client] = GetGameTime() + 0.25;
-
-	b_TransmitBiasDo[entity][client] = SetTransmit_BuildingShared(entity, client, false, true);
-	return b_TransmitBiasDo[entity][client];
-}
 
 static Action SetTransmit_BuildingShared(int entity, int client, bool reverse, bool Ignorethird = false)
 {
@@ -582,17 +583,30 @@ public bool ObjectGeneric_CanBuild(int client, int &count, int &maxcount)
 	return true;
 }
 
+public bool ObjectGeneric_CanBuildSentryBarracks(int client, int &count, int &maxcount)
+{
+	if(!client)
+		return false;
+		
+	return ObjectGeneric_CanBuildSentryInternal(client, count, maxcount);
+}
 public bool ObjectGeneric_CanBuildSentry(int client, int &count, int &maxcount)
 {
 	if(!client)
 		return false;
-	
+	if(i_NormalBarracks_HexBarracksUpgrades_2[client] & ZR_BARRACKS_TROOP_CLASSES)
+		return false;
+
+	return ObjectGeneric_CanBuildSentryInternal(client, count, maxcount);
+}
+
+bool ObjectGeneric_CanBuildSentryInternal(int client, int &count, int &maxcount)
+{
 	count = Object_GetSentryBuilding(client) == -1 ? 0 : 1;
 	maxcount = (Blacksmith_IsASmith(client) || Merchant_IsAMerchant(client)) ? 0 : 1;
 
 	return (!count && maxcount);
 }
-
 bool Object_CanBuild(Function func, int client, int &count = 0, int &maxcount = 0)
 {
 	bool result;
@@ -646,6 +660,12 @@ static bool ObjectGeneric_ClotThink(ObjectGeneric objstats)
 	int owner = GetEntPropEnt(objstats.index, Prop_Send, "m_hOwnerEntity");
 	if(owner == -1)
 	{
+		//give 30 sec untill it destroys itself
+		if(objstats.LastTimeClaimed + 30.0 < GetGameTime())
+		{
+			DestroyBuildingDo(objstats.index);
+			return false;
+		}
 		if(FuncCanBuild[objstats.index] && FuncCanBuild[objstats.index] != INVALID_FUNCTION)
 		{
 			// If 0 can't build, destory the unclaimed building (sentry)
@@ -677,6 +697,7 @@ static bool ObjectGeneric_ClotThink(ObjectGeneric objstats)
 	}
 	else
 	{
+		objstats.LastTimeClaimed = GetGameTime();
 		for(int target = 1; target <= MaxClients; target++)
 		{
 			if(FuncCanUse[objstats.index] && FuncCanUse[objstats.index] != INVALID_FUNCTION && IsClientInGame(target) && IsPlayerAlive(target))
@@ -724,27 +745,6 @@ static bool ObjectGeneric_ClotThink(ObjectGeneric objstats)
 		{
 			SetEntityRenderColor(objstats.index, r, g, 0, 255);
 		}
-		/*
-		if(b_Anger[wearable])
-		{
-			this.SetSequence(0);	
-		}
-		else
-		{
-			this.SetSequence(0);
-		}
-		*/
-		/*
-		wearable = objstats.m_iWearable2;
-		if(wearable != -1)
-		{
-			SetEntityRenderColor(wearable, r, g, 0, 255);
-		}
-		else
-		{
-			SetEntityRenderColor(objstats.index, r, g, 0, 255);
-		}
-		*/
 		
 	}
 	return true;
@@ -753,7 +753,14 @@ static bool ObjectGeneric_ClotThink(ObjectGeneric objstats)
 bool Object_ShowInteractHud(int client, int entity)
 {
 	if(!FuncShowInteractHud[entity] || FuncShowInteractHud[entity] == INVALID_FUNCTION)
-		return false;
+	{
+		//No interact hud....
+		//display it forcefully.
+		char ButtonDisplay[255];
+		BuildingVialityDisplay(client, entity, ButtonDisplay, sizeof(ButtonDisplay));
+		PrintCenterText(client, "%s", ButtonDisplay);
+		return true;
+	}
 	
 	Call_StartFunction(null, FuncShowInteractHud[entity]);
 	Call_PushCell(entity);
@@ -987,7 +994,7 @@ Action ObjectGeneric_ClotTakeDamage(int victim, int &attacker, int &inflictor, f
 
 	if(Rogue_Mode()) //buildings are refunded alot, so they shouldnt last long.
 	{
-		int scale = ZR_Waves_GetRound();
+		int scale = Waves_GetRoundScale();
 		if(scale < 2)
 		{
 			//damage *= 1.0;
@@ -1133,6 +1140,7 @@ void BuildingUpdateTextHud(int building)
 	int Repair = GetEntProp(objstats.index, Prop_Data, "m_iRepair");
 
 	int Health = GetEntProp(objstats.index, Prop_Data, "m_iHealth");
+	int MaxHealth = GetEntProp(objstats.index, Prop_Data, "m_iMaxHealth");
 	HealthColour[0] = 255;
 	HealthColour[1] = 255;
 	HealthColour[3] = 255;
@@ -1154,6 +1162,15 @@ void BuildingUpdateTextHud(int building)
 		Format(HealthText, sizeof(HealthText), "[[[%s]]]",HealthText);
 		SpacerAdd -= 2;
 	}
+	char ThousandBuffer2[64];
+	char ThousandBuffer3[64];
+	IntToString(Health, ThousandBuffer2, sizeof(ThousandBuffer2));
+	ThousandString(ThousandBuffer2, sizeof(ThousandBuffer2));
+	IntToString(MaxHealth, ThousandBuffer3, sizeof(ThousandBuffer3));
+	ThousandString(ThousandBuffer3, sizeof(ThousandBuffer3));
+	int SpacerThousand;
+	SpacerThousand += (strlen(ThousandBuffer2) / 2);
+	SpacerThousand += (strlen(ThousandBuffer3) / 2);
 	if(Repair <= 0)
 	{
 		if(Resistance_for_building_High[objstats.index] < GetGameTime())
@@ -1162,36 +1179,33 @@ void BuildingUpdateTextHud(int building)
 		HealthColour[0] = 255;
 		HealthColour[1] = 0;
 		HealthColour[3] = 255;
-		char ThousandBuffer[128];
-		IntToString(Health, ThousandBuffer, sizeof(ThousandBuffer));
-		ThousandString(ThousandBuffer, sizeof(ThousandBuffer));
-		SpacerAdd += (strlen(ThousandBuffer) / 2);
+		SpacerAdd += SpacerThousand;
 		SpacerAdd = RoundToNearest(float(SpacerAdd) * 1.5);
+		SpacerAdd += 3;
 		for(int AddSpacer; AddSpacer <= SpacerAdd; AddSpacer++)
 		{
 			Format(HealthText, sizeof(HealthText), "%s ", HealthText);
 		}
-		Format(HealthText, sizeof(HealthText), "%s\n%s", HealthText, ThousandBuffer);
+		Format(HealthText, sizeof(HealthText), "%s\n%s/%s HP", HealthText, ThousandBuffer2, ThousandBuffer3);
 	}
 	else
 	{
-		char ThousandBuffer[64];
-		char ThousandBuffer2[64];
-		IntToString(Repair, ThousandBuffer, sizeof(ThousandBuffer));
-		ThousandString(ThousandBuffer, sizeof(ThousandBuffer));
-		IntToString(Health, ThousandBuffer2, sizeof(ThousandBuffer2));
-		ThousandString(ThousandBuffer2, sizeof(ThousandBuffer2));
-		SpacerAdd += (strlen(ThousandBuffer) / 2);
-		SpacerAdd += (strlen(ThousandBuffer2) / 2);
+		SpacerAdd += SpacerThousand;
+		int MaxRepair = GetEntProp(objstats.index, Prop_Data, "m_iRepairMax");
+		float RatioLeft = float(Repair) / float(MaxRepair);
 		SpacerAdd += 2;
 		SpacerAdd = RoundToNearest(float(SpacerAdd) * 1.5);
+		RatioLeft *= 100.0;
 		for(int AddSpacer; AddSpacer <= SpacerAdd; AddSpacer++)
 		{
 			Format(HealthText, sizeof(HealthText), " %s", HealthText);
 		}
-		Format(HealthText, sizeof(HealthText), "%s\n%s", HealthText, ThousandBuffer);
-		Format(HealthText, sizeof(HealthText), "%s%s", HealthText, " -> ");
-		Format(HealthText, sizeof(HealthText), "%s%s", HealthText, ThousandBuffer2);
+		Format(HealthText, sizeof(HealthText), "%s\n%s/%s HP\n", HealthText, ThousandBuffer2, ThousandBuffer3, RatioLeft);
+		for(int AddSpacer; AddSpacer <= SpacerThousand; AddSpacer++)
+		{
+			Format(HealthText, sizeof(HealthText), "%s ", HealthText);
+		}
+		Format(HealthText, sizeof(HealthText), "%s(%0.f%% R)", HealthText, RatioLeft);
 	}
 
 
@@ -1211,18 +1225,31 @@ void BuildingUpdateTextHud(int building)
 		int TextEntity = SpawnFormattedWorldText(HealthText,Offset, 6, HealthColour, objstats.index);
 		DispatchKeyValue(TextEntity, "font", "4");
 		objstats.m_iWearable2 = TextEntity;	
+		SDKHook(TextEntity, SDKHook_SetTransmit, SetTransmit_TextBuildingDo);
 	}
 }
-/*
-static Action SetTransmit_OwnerOfBuilding(int entity, int client)
+
+void BuildingVialityDisplay(int client, int building ,char[] Buffer, int Buffersize)
 {
-	if(OwnerOfText[entity] == client)
-	{
-		return Plugin_Continue;
-	}
-	return Plugin_Handled;
+	int Repair = GetEntProp(building, Prop_Data, "m_iRepair");
+	int MaxRepair = GetEntProp(building, Prop_Data, "m_iRepairMax");
+
+	int Health = GetEntProp(building, Prop_Data, "m_iHealth");
+	int MaxHealth = GetEntProp(building, Prop_Data, "m_iMaxHealth");
+	
+	float RepairPercnt = float(Repair) / float(MaxRepair);
+	RepairPercnt *= 100.0;
+	
+	char ThousandBuffer1[128];
+	IntToString(Health, ThousandBuffer1, sizeof(ThousandBuffer1));
+	ThousandString(ThousandBuffer1, sizeof(ThousandBuffer1));
+	
+	char ThousandBuffer2[128];
+	IntToString(MaxHealth, ThousandBuffer2, sizeof(ThousandBuffer2));
+	ThousandString(ThousandBuffer2, sizeof(ThousandBuffer2));
+	Format(Buffer, Buffersize, "%T","Viality Building Display", client, ThousandBuffer1, ThousandBuffer2, RepairPercnt);
 }
-*/
+
 
 int FloatToInt_DamageValue_ObjBuilding(int victim, float damage)
 {
@@ -1261,4 +1288,18 @@ int FloatToInt_DamageValue_ObjBuilding(int victim, float damage)
 		}		
 	}
 	return Damage_Return;
+}
+
+
+public Action SetTransmit_TextBuildingDo(int entity, int client)
+{
+	if(b_CanSeeBuildingValues_Force[client])
+	{
+		//if the client forces it...
+		return Plugin_Continue;
+	}
+	if(b_CanSeeBuildingValues[client])
+		return Plugin_Continue;
+	else
+		return Plugin_Handled;
 }

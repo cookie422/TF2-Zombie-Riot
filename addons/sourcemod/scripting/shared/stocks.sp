@@ -169,7 +169,7 @@ stock int ParticleEffectAt_Parent(float position[3], char[] effectName, int iPar
 		else
 			DispatchKeyValue(particle, "effect_name", "3rd_trail");
 			
-		if(iParent > MAXTF2PLAYERS) //Exclude base_bosses from this, or any entity, then it has to always be rendered.
+		if(iParent > MAXPLAYERS) //Exclude base_bosses from this, or any entity, then it has to always be rendered.
 		{
 			b_IsEntityAlwaysTranmitted[particle] = true;
 		}
@@ -616,8 +616,23 @@ stock bool TF2_GetWearable(int client, int &entity)
 	}
 	return false;
 }
+stock int TF2_GetClassnameSlot(const char[] classname, int entity = -1)
+{
+	//if we already got the slot, dont bother.
+	if(entity != -1 && i_SavedActualWeaponSlot[entity] != -1)
+	{
+		return i_SavedActualWeaponSlot[entity];
+	}
+	//This is a bandaid fix.
+	int Index = TF2_GetClassnameSlotInternal(classname, false);
+	if(entity != -1)
+	{
+		i_SavedActualWeaponSlot[entity] = Index;
+	}
+	return Index;
+}
 
-stock int TF2_GetClassnameSlot(const char[] classname, bool econ=false)
+stock int TF2_GetClassnameSlotInternal(const char[] classname, bool econ=false)
 {
 	if(StrEqual(classname, "tf_weapon_scattergun") ||
 	   StrEqual(classname, "tf_weapon_handgun_scout_primary") ||
@@ -685,7 +700,6 @@ stock int TF2_GetClassnameSlot(const char[] classname, bool econ=false)
 	}
 	return TFWeaponSlot_Melee;
 }
-
 stock int GetAmmo(int client, int type)
 {
 	/*
@@ -705,6 +719,9 @@ stock void SetAmmo(int client, int type, int ammo)
 {
 	if(type == Ammo_Metal)
 	{
+		if(ammo < 10)
+			ammo = 10;
+		//Never ever set lower then 1!!!
 		SetEntProp(client, Prop_Data, "m_iAmmo", ammo, _, Ammo_Metal_Sub);
 	}
 	SetEntProp(client, Prop_Data, "m_iAmmo", ammo, _, type);
@@ -984,7 +1001,7 @@ public void RequestFramesCallback(DataPack pack)
 }
 
 
-stock int TF2_CreateGlow(int iEnt)
+stock int TF2_CreateGlow(int iEnt, bool RenderModeAllow = false)
 {
 	char oldEntName[64];
 	GetEntPropString(iEnt, Prop_Data, "m_iName", oldEntName, sizeof(oldEntName));
@@ -997,10 +1014,16 @@ stock int TF2_CreateGlow(int iEnt)
 	int ent = CreateEntityByName("tf_glow");
 	DispatchKeyValue(ent, "targetname", "RainbowGlow");
 	DispatchKeyValue(ent, "target", strName);
-	DispatchKeyValue(ent, "Mode", "2");
+	DispatchKeyValue(ent, "Mode", "0");
+
 	DispatchSpawn(ent);
-	
 	AcceptEntityInput(ent, "Enable");
+	
+	if(RenderModeAllow)
+		SetEdictFlags(ent, (GetEdictFlags(ent) & ~FL_EDICT_ALWAYS));	
+
+	if(RenderModeAllow)
+		Hook_DHook_UpdateTransmitState(ent);
 	
 	//Change name back to old name because we don't need it anymore.
 	SetEntPropString(iEnt, Prop_Data, "m_iName", oldEntName);
@@ -1008,32 +1031,37 @@ stock int TF2_CreateGlow(int iEnt)
 	return ent;
 }
 
-stock int TF2_CreateGlow_White(const char[] model, int parentTo, float modelsize)
+int TF2_CreateGlow_White(const char[] model, int victim, float modelsize)
 {
 	int entity = CreateEntityByName("tf_taunt_prop");
 	if(IsValidEntity(entity))
 	{
+	//	SetEntProp(entity, Prop_Data, "m_iInitialTeamNum", 2);
+	//	SetEntProp(entity, Prop_Send, "m_iTeamNum", 2);
+
 		DispatchSpawn(entity);
+
 		SetEntityModel(entity, model);
-
-		ActivateEntity(entity);
-
-		SetEntProp(entity, Prop_Send, "m_iTeamNum", GetEntProp(parentTo, Prop_Send, "m_iTeamNum"));
-
-		SetEntPropFloat(entity, Prop_Send, "m_flModelScale", modelsize);
-		SetEntPropEnt(entity, Prop_Data, "m_hEffectEntity", parentTo);
-		SetEntPropEnt(entity, Prop_Data, "m_hOwnerEntity", parentTo);
+		SetEntPropEnt(entity, Prop_Data, "m_hEffectEntity", victim);
+		SetEntPropEnt(entity, Prop_Data, "m_hOwnerEntity", victim);
 		SetEntProp(entity, Prop_Send, "m_bGlowEnabled", true);
-		int iFlags = GetEntProp(entity, Prop_Send, "m_fEffects");
-			
-		SetEntProp(entity, Prop_Send, "m_fEffects",
-				iFlags |EF_BONEMERGE|EF_NOSHADOW|EF_NORECEIVESHADOW);
+		SetEntProp(entity, Prop_Send, "m_fEffects", GetEntProp(victim, Prop_Send, "m_fEffects")|EF_BONEMERGE|EF_NOSHADOW|EF_NOINTERP);
 
-		SetVariantString("!activator");
-		AcceptEntityInput(entity, "SetParent", parentTo);
+	//	SetEntPropFloat(entity, Prop_Send, "m_fadeMinDist", 990.0);
+	//	SetEntPropFloat(entity, Prop_Send, "m_fadeMaxDist", 1000.0);	
+		SetEntPropFloat(entity, Prop_Send, "m_flModelScale", modelsize);
+		//we gotta copy several things.......
+		SetEntProp(entity, Prop_Send, "m_nSkin", GetEntProp(victim, Prop_Send, "m_nSkin"));
+		SetEntProp(entity, Prop_Send, "m_nBody", GetEntProp(victim, Prop_Send, "m_nBody"));
+		
+		SetParent(victim, entity);
 
-		SetEntityRenderMode(entity, RENDER_TRANSCOLOR);
-		SetEntityRenderColor(entity, 255, 255, 255, 255);
+		SetEntityRenderMode(entity, i_EntityRenderMode[victim]);
+		SetEntityRenderColor(entity,
+							i_EntityRenderColour1[victim],
+							i_EntityRenderColour2[victim],
+							i_EntityRenderColour3[victim],
+							i_EntityRenderColour4[victim]);
 	}
 	return entity;
 }
@@ -1092,6 +1120,11 @@ stock int GiveWearable(int client, int index)
 }
 
 stock bool AreVectorsEqual(const float vVec1[3], const float vVec2[3])
+{
+	return (vVec1[0] == vVec2[0] && vVec1[1] == vVec2[1] && vVec1[2] == vVec2[2]);
+} 
+
+stock bool AreVectorsEqualAprox(const float vVec1[3], const float vVec2[3])
 {
 	return (vVec1[0] == vVec2[0] && vVec1[1] == vVec2[1] && vVec1[2] == vVec2[2]);
 } 
@@ -1322,11 +1355,9 @@ stock int HealEntityGlobal(int healer, int reciever, float HealTotal, float Maxh
 		if(b_HealthyEssence && GetTeam(reciever) == TFTeam_Red)
 			HealTotal *= 1.25;
 			
-		bool RegrowthBlock;
- 		Building_CamoOrRegrowBlocker(healer, _, RegrowthBlock);
-		if(RegrowthBlock)
+		if(HasSpecificBuff(reciever, "Growth Blocker"))
 		{
-			HealTotal *= 0.5;
+			HealTotal *= 0.85;
 		}
 		if(HasSpecificBuff(reciever, "Burn"))
 			HealTotal *= 0.75;
@@ -1366,24 +1397,24 @@ stock int HealEntityGlobal(int healer, int reciever, float HealTotal, float Maxh
 		if(HealingDoneInt > 0)
 		{
 #if defined ZR
-		if(healer != reciever)
-		{
-			Healing_done_in_total[healer] += HealingDoneInt;
-			if(healer <= MaxClients)
+			if(healer != reciever)
 			{
-				//dont get it from healing buildings
-				if(!i_IsABuilding[reciever])
+				Healing_done_in_total[healer] += HealingDoneInt;
+				if(healer <= MaxClients)
 				{
-					AddHealthToUbersaw(healer, HealingDoneInt, 0.0);
-					HealPointToReinforce(healer, HealingDoneInt, 0.0);
-					GiveRageOnDamage(healer, float(HealingDoneInt) * 2.0);
+					//dont get it from healing buildings
+					if(!i_IsABuilding[reciever])
+					{
+						AddHealthToUbersaw(healer, HealingDoneInt, 0.0);
+						HealPointToReinforce(healer, HealingDoneInt, 0.0);
+						GiveRageOnDamage(healer, float(HealingDoneInt) * 2.0);
+					}
 				}
 			}
-		}
 #endif
 //only apply heal event if its not a passive self heal
-		if(!(flag_extrarules & (HEAL_PASSIVE_NO_NOTIF)))
-			ApplyHealEvent(reciever, HealingDoneInt);
+			if(!(flag_extrarules & (HEAL_PASSIVE_NO_NOTIF)))
+				ApplyHealEvent(reciever, HealingDoneInt, healer);
 		}
 		return HealingDoneInt;
 	}
@@ -1455,7 +1486,7 @@ public Action Timer_Healing(Handle timer, DataPack pack)
 	int HealthHealed = HealEntityViaFloat(entity, HealthToGive, HealthMaxPercentage);
 	if(HealthHealed > 0)
 	{
-		ApplyHealEvent(entity, HealthHealed);	// Show healing number
+		ApplyHealEvent(entity, HealthHealed, healer);	// Show healing number
 		if(healer > 0 && healer != entity)
 		{
 			Healing_done_in_total[healer] += HealthHealed;
@@ -1481,13 +1512,24 @@ public Action Timer_Healing(Handle timer, DataPack pack)
 
 //doing this litterally every heal spams it, so we make a 0.5 second delay, and thus, will stack it, and then show it all at once.
 Handle h_Timer_HealEventApply[MAXPLAYERS+1] = {null, ...};
+Handle h_Timer_HealEventApply_Ally[MAXPLAYERS+1] = {null, ...};
+ArrayList h_Arraylist_HealEventAlly[MAXPLAYERS+1];
+
+enum struct HealEventSaveInfo
+{
+	int HealedTarget;
+	int HealAmount;
+	int ArmorAmount;
+}
+
 static int i_HealsDone_Event[MAXENTITIES]={0, ...};
 
-stock void ApplyHealEvent(int entindex, int amount)
+stock void ApplyHealEvent(int entindex, int amount, int ownerheal = 0)
 {
 	if(IsValidClient(entindex))
 	{
 		i_HealsDone_Event[entindex] += amount;
+			
 		if (h_Timer_HealEventApply[entindex] == null)
 		{
 			DataPack pack;
@@ -1500,7 +1542,135 @@ stock void ApplyHealEvent(int entindex, int amount)
 	{
 		DisplayHealParticleAbove(entindex);
 	}
+	if(ownerheal <= MaxClients && ownerheal > 0 && ownerheal != entindex)
+	{
+		if(!h_Arraylist_HealEventAlly[ownerheal])
+			h_Arraylist_HealEventAlly[ownerheal] = new ArrayList(sizeof(HealEventSaveInfo));
+
+		HealEventSaveInfo data;
+		bool FoundTarget = false;
+		int length = h_Arraylist_HealEventAlly[ownerheal].Length;
+		for(int i; i < length; i++)
+		{
+			// Loop through the arraylist to find the Heal Target
+			h_Arraylist_HealEventAlly[ownerheal].GetArray(i, data);
+			
+			if(EntRefToEntIndex(data.HealedTarget) != entindex)
+				continue;
+
+			//we found a match
+			data.HealAmount += amount;
+			FoundTarget = true;
+			h_Arraylist_HealEventAlly[ownerheal].SetArray(i, data);
+		}
+		if(!FoundTarget)
+		{
+			// Create a new entry
+			data.HealedTarget = EntIndexToEntRef(entindex);
+			data.HealAmount = amount;
+			h_Arraylist_HealEventAlly[ownerheal].PushArray(data);
+		}
+
+		
+		if (h_Timer_HealEventApply_Ally[ownerheal] == null)
+		{
+			DataPack pack;
+			h_Timer_HealEventApply_Ally[ownerheal] = CreateDataTimer(1.0, Timer_HealEventApply_Ally, pack, _);
+			pack.WriteCell(ownerheal);
+			pack.WriteCell(EntIndexToEntRef(ownerheal));
+		}
+	}
 }
+stock void ApplyArmorEvent(int entindex, int amount, int ownerheal = 0)
+{
+	if(ownerheal <= MaxClients && ownerheal > 0 && ownerheal != entindex)
+	{
+		if(!h_Arraylist_HealEventAlly[ownerheal])
+			h_Arraylist_HealEventAlly[ownerheal] = new ArrayList(sizeof(HealEventSaveInfo));
+
+		HealEventSaveInfo data;
+		bool FoundTarget = false;
+		int length = h_Arraylist_HealEventAlly[ownerheal].Length;
+		for(int i; i < length; i++)
+		{
+			// Loop through the arraylist to find the Heal Target
+			h_Arraylist_HealEventAlly[ownerheal].GetArray(i, data);
+			
+			if(EntRefToEntIndex(data.HealedTarget) != entindex)
+				continue;
+
+			//we found a match
+			data.ArmorAmount += amount;
+			FoundTarget = true;
+			h_Arraylist_HealEventAlly[ownerheal].SetArray(i, data);
+		}
+		if(!FoundTarget)
+		{
+			// Create a new entry
+			data.HealedTarget = EntIndexToEntRef(entindex);
+			data.ArmorAmount = amount;
+			h_Arraylist_HealEventAlly[ownerheal].PushArray(data);
+		}
+		
+		if (h_Timer_HealEventApply_Ally[ownerheal] == null)
+		{
+			DataPack pack;
+			h_Timer_HealEventApply_Ally[ownerheal] = CreateDataTimer(1.0, Timer_HealEventApply_Ally, pack, _);
+			pack.WriteCell(ownerheal);
+			pack.WriteCell(EntIndexToEntRef(ownerheal));
+		}
+	}
+}
+
+
+public Action Timer_HealEventApply_Ally(Handle timer, DataPack pack)
+{
+	pack.Reset();
+	int clientOriginalIndex = pack.ReadCell();
+	int client = EntRefToEntIndex(pack.ReadCell());
+
+	if (!IsValidMulti(client))
+	{
+		h_Timer_HealEventApply_Ally[clientOriginalIndex] = null;
+		delete h_Arraylist_HealEventAlly[clientOriginalIndex];
+		return Plugin_Stop;
+	}
+	HealEventSaveInfo data;
+	int length = h_Arraylist_HealEventAlly[clientOriginalIndex].Length;
+	for(int i; i < length; i++)
+	{
+		// Loop through the arraylist to find the Heal Target
+		h_Arraylist_HealEventAlly[clientOriginalIndex].GetArray(i, data);
+		
+		if(!IsValidEntity(data.HealedTarget))
+			continue;
+	
+		if(data.HealAmount)
+		{
+			Event event = CreateEvent("building_healed", true);
+			event.SetInt("priority", 1);
+			event.SetInt("building", EntRefToEntIndex(data.HealedTarget));
+			event.SetInt("healer", clientOriginalIndex);
+			event.SetInt("amount", data.HealAmount);
+			event.FireToClient(clientOriginalIndex);
+			event.Cancel();
+		}
+		if(data.ArmorAmount)
+		{
+			Event event = CreateEvent("player_bonuspoints", true);
+			event.SetInt("priority", 1);
+			event.SetInt("source_entindex", EntRefToEntIndex(data.HealedTarget));
+			event.SetInt("player_entindex", clientOriginalIndex);
+			event.SetInt("points", data.ArmorAmount * 10);
+			event.FireToClient(clientOriginalIndex);
+			event.Cancel();
+		}
+	}
+	delete h_Arraylist_HealEventAlly[clientOriginalIndex];
+	h_Timer_HealEventApply_Ally[clientOriginalIndex] = null;
+	return Plugin_Stop;
+}
+
 
 public Action Timer_HealEventApply(Handle timer, DataPack pack)
 {
@@ -1956,7 +2126,19 @@ stock bool IsEven( int iNum )
 stock bool IsInvuln(int client, bool IgnoreNormalUber = false) //Borrowed from Batfoxkid
 {
 	if(!IsValidClient(client))
-		return true;
+	{
+		if(!IsValidEntity(client))
+		{
+			return false;
+		}
+		if(HasSpecificBuff(client, "Unstoppable Force"))
+			return true;
+
+		if(b_NpcIsInvulnerable[client])
+			return true;
+		
+		return false;
+	}
 
 	if(!IgnoreNormalUber)
 	{
@@ -2693,7 +2875,8 @@ stock int Target_Hit_Wand_Detection(int owner_projectile, int other_entity)
 	{
 		return -1;
 	}
-	else if(i_IsABuilding[other_entity])
+	//Re-use b_AllowCollideWithSelfTeam here
+	else if(!b_AllowCollideWithSelfTeam[owner_projectile] && i_IsABuilding[other_entity])
 	{
 		return -1;
 	}
@@ -2865,12 +3048,12 @@ float ZRStocks_PlayerScalingDynamic(float rebels = 0.5, bool IgnoreMulti = false
 	{
 		if(!b_IsPlayerABot[client] && b_HasBeenHereSinceStartOfWave[client] && IsClientInGame(client) && GetClientTeam(client)==2 && TeutonType[client] != TEUTON_WAITING)
 		{
-			if(!IgnoreLevelLimit && Database_IsCached(client) && Level[client] <= 30)
+			if(!IgnoreLevelLimit && Database_IsCached(client) && Level[client] <= 20)
 			{
 				float CurrentLevel = float(Level[client]);
-				CurrentLevel += 30.0;
+				CurrentLevel += 20.0;
 				//so lvl 0 is atleast resulting in 0.5 Scaling
-				ScaleReturn += (CurrentLevel / 60.0);
+				ScaleReturn += (CurrentLevel / 40.0);
 			}
 			else
 			{
@@ -2883,7 +3066,7 @@ float ZRStocks_PlayerScalingDynamic(float rebels = 0.5, bool IgnoreMulti = false
 		ScaleReturn += Citizen_Count() * rebels;
 
 	if(!IgnoreMulti)
-		ScaleReturn *= zr_multi_multiplier.FloatValue;
+		ScaleReturn *= zr_multi_scaling.FloatValue;
 	
 	return ScaleReturn;
 }
@@ -4043,7 +4226,7 @@ stock char[] CharPercent(float value)
 
 stock bool AmmoBlacklist(int Ammotype)
 {
-	if(Ammotype == -1 || Ammotype >= Ammo_Hand_Grenade)
+	if(Ammotype >= 0 && Ammotype<= 2 || Ammotype == -1 || Ammotype >= Ammo_Hand_Grenade)
 	{
 		return false;
 	}
@@ -4965,7 +5148,7 @@ enum g_Collision_Group
 	
 };
 
-float f_HitmarkerSameFrame[MAXTF2PLAYERS];
+float f_HitmarkerSameFrame[MAXPLAYERS];
 
 stock void DoClientHitmarker(int client)
 {

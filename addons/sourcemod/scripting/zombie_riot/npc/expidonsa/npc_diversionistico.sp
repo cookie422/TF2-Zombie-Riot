@@ -279,23 +279,23 @@ public void Diversionistico_ClotThink(int iNPC)
 			if(AntiCheeseReply == 0)
 			{
 				if(!npc.m_bPathing)
-					NPC_StartPathing(npc.index);
+					npc.StartPathing();
 
-				NPC_SetGoalVector(npc.index, vPredictedPos, true);
+				npc.SetGoalVector(vPredictedPos, true);
 			}
 			else if(AntiCheeseReply == 1)
 			{
 				if(npc.m_bPathing)
-					NPC_StopPathing(npc.index);
+					npc.StopPathing();
 			}
 		}
 		else 
 		{
 			DiversionCalmDownCheese(npc.index);
 			if(!npc.m_bPathing)
-				NPC_StartPathing(npc.index);
+				npc.StartPathing();
 
-			NPC_SetGoalEntity(npc.index, npc.m_iTarget);
+			npc.SetGoalEntity(npc.m_iTarget);
 		}
 		switch(AntiCheeseReply)
 		{
@@ -475,7 +475,7 @@ int TeleportDiversioToRandLocation(int iNPC, bool RespectOutOfBounds = false, fl
 		return 3;
 	
 	Diversionistico npc = view_as<Diversionistico>(iNPC);
-	for( int loop = 1; loop <= 500; loop++ ) 
+	for( int loop = 1; loop <= 100; loop++ ) 
 	{
 		float AproxRandomSpaceToWalkTo[3];
 		CNavArea RandomArea = PickRandomArea();	

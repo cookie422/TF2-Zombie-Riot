@@ -64,7 +64,7 @@ public void Ikunagae_OnMapStart_NPC()
 }
 static any ClotSummon(int client, float vecPos[3], float vecAng[3], int team, const char[] data)
 {
-	return Ikunagae(vecPos, vecAng, team);
+	return Ikunagae(vecPos, vecAng, team, data);
 }
 methodmap Ikunagae < CClotBody
 {
@@ -113,6 +113,11 @@ methodmap Ikunagae < CClotBody
 		public get()		{ return this.m_iMedkitAnnoyance; }
 		public set(int value) 	{ this.m_iMedkitAnnoyance = value; }
 	}
+	property int m_iMaxSpawnsDo
+	{
+		public get()		{ return this.m_iAttacksTillMegahit; }
+		public set(int value) 	{ this.m_iAttacksTillMegahit = value; }
+	}
 	property int m_iBarrageBooleanThing
 	{
 		public get()		{ return i_GunMode[this.index]; }
@@ -147,7 +152,7 @@ methodmap Ikunagae < CClotBody
 		EmitSoundToAll(g_DefaultLaserLaunchSound[chose], this.index, SNDCHAN_STATIC, RAIDBOSS_ZOMBIE_SOUNDLEVEL, _, BOSS_ZOMBIE_VOLUME);
 		EmitSoundToAll(g_DefaultLaserLaunchSound[chose], this.index, SNDCHAN_STATIC, RAIDBOSS_ZOMBIE_SOUNDLEVEL, _, BOSS_ZOMBIE_VOLUME);
 	}
-	public Ikunagae(float vecPos[3], float vecAng[3], int ally)
+	public Ikunagae(float vecPos[3], float vecAng[3], int ally, const char[] data)
 	{
 		Ikunagae npc = view_as<Ikunagae>(CClotBody(vecPos, vecAng, "models/player/medic.mdl", "1.0", "13500", ally));
 		
@@ -175,6 +180,12 @@ methodmap Ikunagae < CClotBody
 		
 		SetVariantInt(1);
 		AcceptEntityInput(npc.index, "SetBodyGroup");
+		bool LimitSpawns = StrContains(data, "limit_spawns") != -1;
+		npc.m_iMaxSpawnsDo = 9999;
+		if(LimitSpawns)
+		{
+			npc.m_iMaxSpawnsDo = 3;
+		}
 		
 
 		//models/workshop/player/items/medic/hw2013_moon_boots/hw2013_moon_boots.mdl
@@ -334,11 +345,11 @@ static void Internal_ClotThink(int iNPC)
 				
 			float vPredictedPos[3]; PredictSubjectPosition(npc, PrimaryThreatIndex,_,_, vPredictedPos);
 			
-			NPC_SetGoalVector(npc.index, vPredictedPos);
+			npc.SetGoalVector(vPredictedPos);
 		}
 		else 
 		{
-			NPC_SetGoalEntity(npc.index, PrimaryThreatIndex);
+			npc.SetGoalEntity(PrimaryThreatIndex);
 		}
 		npc.StartPathing();
 			
@@ -466,7 +477,7 @@ static void Internal_ClotThink(int iNPC)
 	}
 	else
 	{
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		npc.m_flGetClosestTargetTime = 0.0;
 		npc.m_iTarget = GetClosestTarget(npc.index);
@@ -1052,12 +1063,6 @@ static void Severity_Core(int client) //Depending on current hp we determin  the
 	npc.m_iState = RoundToCeil(spin_min + (spin_max - spin_min) * (1.0-Ratio));
 	npc.m_iBarrageSeverity= RoundToCeil(barrage_min + (barrage_max - barrage_min) * (1.0-Ratio));
 	npc.m_flScaraSeverity = scara_min + (scara_max - scara_min) * Ratio;
-	/*
-	if((ZR_Waves_GetRound()+1)==59)	//Makes it so the spam on wave 59 doesn't absoluetly annihialate the server.
-	{
-		npc.m_iBarrageSeverity= 4;
-	}
-	*/
 }
 
 ///Primary Long attack core
@@ -1091,6 +1096,11 @@ static void Ikunagae_Spawn_Minnions(int client, int hp_multi)
 	if(0.9-(npc.g_TimesSummoned*0.2) > ratio)
 	{
 		npc.g_TimesSummoned++;
+		if(npc.m_iMaxSpawnsDo == 3)
+		{
+			//half said spawns.
+			npc.g_TimesSummoned += 99; //only ever spawn one!
+		}
 		maxhealth /= hp_multi;
 		for(int i; i<1; i++)
 		{

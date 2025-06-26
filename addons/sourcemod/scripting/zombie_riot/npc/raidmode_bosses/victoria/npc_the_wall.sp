@@ -85,7 +85,7 @@ static bool BulletArmor[MAXENTITIES];
 
 static float DynamicCharger[MAXENTITIES];
 static float ExtraMovement[MAXENTITIES];
-static bool Frozen_Player[MAXTF2PLAYERS];
+static bool Frozen_Player[MAXPLAYERS];
 
 static int MechanizedProtector[MAXENTITIES][3];
 static int LifeSupportDevice[MAXENTITIES][3];
@@ -440,16 +440,16 @@ methodmap Huscarls < CClotBody
 			}
 			else
 			{	
-				RaidModeScaling = float(ZR_Waves_GetRound()+1);
+				RaidModeScaling = float(Waves_GetRoundScale()+1);
 			}
 			
-			if(RaidModeScaling < 55)
+			if(RaidModeScaling < 35)
 			{
-				RaidModeScaling *= 0.19; //abit low, inreacing
+				RaidModeScaling *= 0.25; //abit low, inreacing
 			}
 			else
 			{
-				RaidModeScaling *= 0.38;
+				RaidModeScaling *= 0.5;
 			}
 			
 			float amount_of_people = float(CountPlayersOnRed());
@@ -732,7 +732,7 @@ static void Internal_ClotThink(int iNPC)
 	
 	if(npc.m_bFUCKYOU)
 	{
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		npc.m_bisWalking = false;
 		switch(I_cant_do_this_all_day[npc.index])
@@ -898,7 +898,7 @@ static void Internal_ClotThink(int iNPC)
 					}
 				}
 			}
-			NPC_StopPathing(npc.index);
+			npc.StopPathing();
 			npc.m_bPathing = false;
 			npc.m_bisWalking = false;
 			npc.m_iChanged_WalkCycle = 0;
@@ -943,11 +943,11 @@ static void Internal_ClotThink(int iNPC)
 				{
 					float vPredictedPos[3];
 					PredictSubjectPosition(npc, npc.m_iTarget,_,_, vPredictedPos);
-					NPC_SetGoalVector(npc.index, vPredictedPos);
+					npc.SetGoalVector(vPredictedPos);
 				}
 				else 
 				{
-					NPC_SetGoalEntity(npc.index, npc.m_iTarget);
+					npc.SetGoalEntity(npc.m_iTarget);
 				}
 			}
 			case 1:
@@ -958,7 +958,7 @@ static void Internal_ClotThink(int iNPC)
 				npc.m_bAllowBackWalking = true;
 				float vBackoffPos[3];
 				BackoffFromOwnPositionAndAwayFromEnemy(npc, npc.m_iTarget,_,vBackoffPos);
-				NPC_SetGoalVector(npc.index, vBackoffPos, true); //update more often, we need it
+				npc.SetGoalVector(vBackoffPos, true); //update more often, we need it
 			}
 			case 2:
 			{
@@ -976,7 +976,7 @@ static void Internal_ClotThink(int iNPC)
 				GetEntPropVector(npc.index, Prop_Data, "m_angRotation", vAngles);
 				vAngles[0]=5.0;
 				EntityLookPoint(npc.index, vAngles, VecSelfNpc, vOrigin);
-				NPC_SetGoalVector(npc.index, vOrigin);
+				npc.SetGoalVector(vOrigin);
 			}
 		}
 	}
@@ -1275,7 +1275,7 @@ int HuscarlsSelfDefense(Huscarls npc, float gameTime, int target, float distance
 			case 0:
 			{
 				CPrintToChatAll("{lightblue}Huscarls{default}: Hit me. I DARE YOU.");
-				NPC_StopPathing(npc.index);
+				npc.StopPathing();
 				npc.m_bPathing = false;
 				npc.m_bisWalking = false;
 				npc.AddActivityViaSequence("layer_taunt_unleashed_rage_heavy");
@@ -1462,7 +1462,7 @@ int HuscarlsSelfDefense(Huscarls npc, float gameTime, int target, float distance
 				
 					if(!IsSpaceOccupiedWorldOnly(flMyPos, hullcheckmins, hullcheckmaxs, npc.index))
 					{
-						NPC_StopPathing(npc.index);
+						npc.StopPathing();
 						npc.m_bPathing = false;
 						npc.m_bisWalking = false;
 						npc.AddActivityViaSequence("layer_taunt_bare_knuckle_beatdown_outro");

@@ -46,8 +46,8 @@ static char g_RangedReloadSound[][] = {
 };
 
 static int i_Victim_Infection[MAXENTITIES];
-static float fl_Cure_Meter[MAXTF2PLAYERS];
-static float fl_Infection_Meter[MAXTF2PLAYERS];
+static float fl_Cure_Meter[MAXPLAYERS];
+static float fl_Infection_Meter[MAXPLAYERS];
 static float fl_Default_Speed = 300.0;
 static int smith_id = -1;
 static int i_RedAmount;
@@ -207,16 +207,16 @@ methodmap AgentSmith < CClotBody
 			}
 			else
 			{	
-				RaidModeScaling = float(ZR_Waves_GetRound()+1);
+				RaidModeScaling = float(Waves_GetRoundScale()+1);
 			}
 			
-			if(RaidModeScaling < 55)
+			if(RaidModeScaling < 35)
 			{
-				RaidModeScaling *= 0.19; //abit low, inreacing
+				RaidModeScaling *= 0.25; //abit low, inreacing
 			}
 			else
 			{
-				RaidModeScaling *= 0.38;
+				RaidModeScaling *= 0.5;
 			}
 			float amount_of_people = float(CountPlayersOnRed());
 			
@@ -421,11 +421,11 @@ static void AgentSmith_ClotThink(int iNPC)
 		if(flDistanceToTarget < npc.GetLeadRadius())
 		{
 			float vPredictedPos[3]; PredictSubjectPosition(npc, closest, _, _, vPredictedPos);
-			NPC_SetGoalVector(npc.index, vPredictedPos);
+			npc.SetGoalVector(vPredictedPos);
 		}
 		else
 		{
-			NPC_SetGoalEntity(npc.index, closest);
+			npc.SetGoalEntity(closest);
 		}
 		
 		//Target close enough to hit
@@ -802,7 +802,7 @@ static void Smith_Infection(AgentSmith npc)
 				}
 				case 13, 14:
 				{
-					fl_Infection_Meter[victim] += 0.204;
+					fl_Infection_Meter[victim] += 0.20;
 				}
 			}
 			PrintCenterText(victim, "Your Infection is rising - %.0f％ | Cure %.0f％", (fl_Infection_Meter[victim] * 10.0), (fl_Cure_Meter[victim] * 10.0));
@@ -1068,7 +1068,7 @@ static void AgentSmith_NPCDeath(int entity)
 
 static void AgentSmith_GrantItem()
 {
-	for (int client = 0; client < MaxClients; client++)
+	for (int client = 1; client <= MaxClients; client++)
 	{
 		if(IsValidClient(client) && GetClientTeam(client) == 2 && TeutonType[client] != TEUTON_WAITING && PlayerPoints[client] > 500)
 		{

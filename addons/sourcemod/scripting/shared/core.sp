@@ -31,15 +31,15 @@
 #define CHAR_PARTEMPTY	"▒"
 #define CHAR_EMPTY	"░"
 
-#define TFTeam			PLZUSE_int
+//#define TFTeam			PleaseUse_int
 #define TFTeam_Unassigned 	0
 #define TFTeam_Spectator 	1
 #define TFTeam_Red 		2
 #define TFTeam_Blue		3
 #define TFTeam_Stalkers 		5
 
-#define TF2_GetClientTeam	PLZUSE_GetTeam
-#define TF2_ChangeClientTeam	PLZUSE_SetTeam
+#define TF2_GetClientTeam	PleaseUse_GetTeam
+#define TF2_ChangeClientTeam	PleaseUse_SetTeam
 
 #define RoundState_ZombieRiot view_as<RoundState>(11)
 
@@ -60,6 +60,7 @@
 
 #define ZR_MAX_GIBCOUNT		12 //Anymore then this, and it will only summon 1 gib per zombie instead.
 #define ZR_MAX_GIBCOUNT_ABSOLUTE 35 //Anymore then this, and the duration is halved for gibs staying.
+#define RAIDBOSS_GLOBAL_ATTACKLIMIT 16
 
 //#pragma dynamic	131072
 //Allah This plugin has so much we need to do this.
@@ -90,8 +91,6 @@ bool EnableSilentMode = false;
 
 public const float OFF_THE_MAP[3] = { 16383.0, 16383.0, -16383.0 };
 public float OFF_THE_MAP_NONCONST[3] = { 16383.0, 16383.0, -16383.0 };
-
-#define MEDIGUN_ATTRIBUTE_EXPONTENT 1.45
 
 #if defined ZR
 ConVar zr_downloadconfig;
@@ -543,7 +542,7 @@ int b_OnDeathExtraLogicNpc[MAXENTITIES];
 #define	ZRNPC_DEATH_NOHEALTH		( 1<<0 )	// Do not give health on kill!
 #define	ZRNPC_DEATH_NOGIB		( 1<<1 )	// Do not give health on kill!
 
-float f_MutePlayerTalkShutUp[MAXTF2PLAYERS];
+float f_MutePlayerTalkShutUp[MAXPLAYERS];
 bool b_PlayHurtAnimation[MAXENTITIES];
 bool b_follow[MAXENTITIES];
 bool b_movedelay_walk[MAXENTITIES];
@@ -604,11 +603,11 @@ char c_HeadPlaceAttachmentGibName[MAXENTITIES][64];
 float f_ExplodeDamageVulnerabilityNpc[MAXENTITIES];
 #if defined ZR
 float f_DelayNextWaveStartAdvancingDeathNpc;
-int Armor_Wearable[MAXTF2PLAYERS];
-int Cosmetic_WearableExtra[MAXTF2PLAYERS];
+int Armor_Wearable[MAXPLAYERS];
+int Cosmetic_WearableExtra[MAXPLAYERS];
 #endif
 
-bool b_DamageNumbers[MAXTF2PLAYERS];
+bool b_DamageNumbers[MAXPLAYERS];
 
 int OriginalWeapon_AmmoType[MAXENTITIES];
 
@@ -656,20 +655,12 @@ int OriginalWeapon_AmmoType[MAXENTITIES];
 #include "viewchanges.sp"
 #endif
 
-#if !defined RTS
 #include "attributes.sp"
-#endif
 
-#if !defined NOG
 #include "commands.sp"
 #include "convars.sp"
 #include "dhooks.sp"
 #include "events.sp"
-#endif
-
-#if defined RTS
-#include "rtscamera.sp"
-#endif
 
 #if defined ZR || defined NOG
 #include "npccamera.sp"
@@ -710,7 +701,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 public void OnPluginStart()
 {
 #if defined ZR
-	CurrentAmmo[0] = { 1, 1, 1, 200, 1, 1, 1,
+	CurrentAmmo[0] = { 1, 1, 1, 600, 1, 1, 1,
 	48,
 	24,
 	200,
@@ -912,6 +903,11 @@ public void OnPluginEnd()
 //	Waves_MapEnd(); DO NOT CALL THIS ON PLUGIN END, plugin ends anways, why change anything???
 	RemoveMVMLogicSafety();
 #endif
+	float WaitingForPlayersTime = FindConVar("mp_waitingforplayers_time").FloatValue;
+	if(WaitingForPlayersTime <= 0.0)
+		return;
+	//Fixes ZR breaking waiting for players.
+	GameRules_SetProp("m_bInWaitingForPlayers", false);
 }
 
 #if defined ZR
@@ -926,11 +922,7 @@ void RemoveMVMLogicSafety()
 		return;
 	}
 	MVMHud_Disable();
-	GameRules_SetProp("m_iRoundState", 0);
-
-	//disable all ZR logic.
-	SetVariantString("ForceEnableUpgrades(0)");
-	AcceptEntityInput(0, "RunScriptCode");
+//	GameRules_SetProp("m_iRoundstate", 0);
 	
 	int populator = FindEntityByClassname(-1, "info_populator");
 	if (populator != -1)
@@ -942,6 +934,7 @@ void RemoveMVMLogicSafety()
 	}
 }
 #endif
+
 void Core_PrecacheGlobalCustom()
 {
 	PrecacheSoundCustom("zombiesurvival/headshot1.wav");
@@ -984,15 +977,15 @@ public void OnMapStart()
 	PrecacheSound("mvm/mvm_revive.wav");
 	PrecacheSound("weapons/breadmonster/throwable/bm_throwable_throw.wav");
 	PrecacheSound("weapons/samurai/tf_marked_for_death_indicator.wav");
+	Zero(f_PreventMovementClient);
 	Zero(f_PreventMedigunCrashMaybe);
 	Zero(f_ClientReviveDelayReviveTime);
 	Zero(f_MutePlayerTalkShutUp);
 	ResetIgnorePointVisible();
 	DHooks_MapStart();
-
 #if defined ZR || defined RPG
-	Core_PrecacheGlobalCustom();
 	FileNetwork_MapStart();
+	Core_PrecacheGlobalCustom();
 #endif
 
 	PrecacheSound("weapons/explode1.wav");
@@ -1124,22 +1117,32 @@ void DeleteShadowsOffZombieRiot()
 	int entityshadow = -1;
 	entityshadow = FindEntityByClassname(entityshadow, "shadow_control");
 
-	if(IsValidEntity(entityshadow))
+	if(!IsValidEntity(entityshadow))
 	{
-		RemoveEntity(entityshadow);
+		entityshadow = CreateEntityByName("shadow_control");
+		DispatchSpawn(entityshadow);
 	}
-	entityshadow = CreateEntityByName("shadow_control");
 	
 	//Create new shadow entity, and make own own rules
 	//This disables shadows form npcs, entirely unneecceary as some models have broken as hell shadows.
-	//DispatchKeyValue(entityshadow,"color", "255 255 255 0");
 	if(IsValidEntity(entityshadow))
 	{
-		DispatchSpawn(entityshadow);
+		//This just badly hides shadows
+		/*
+		Whenever we set sv_cheats to 1, and to 0, it sets r_shadows_gamecontrol  to all clients to 0
+		to fix this we have to delete and remake the shadow controll EVERY TIME.
+		This is terrible
+		Colour atleast just hides ths shadows which is fine enough, i guess.
+
+		We cant set EF_NOSHADOW  on npcs for some reason either ,it is a dark day.
+		*/
+		DispatchKeyValue(entityshadow,"color", "255 255 255 0");
 		SetVariantInt(1); 
 		AcceptEntityInput(entityshadow, "SetShadowsDisabled"); 
 	}
+
 }
+
 public void OnMapEnd()
 {
 #if defined ZR
@@ -1150,7 +1153,7 @@ public void OnMapEnd()
 			KickClient(client);
 		}
 	}
-	Store_RandomizeNPCStore(1);
+	Store_RandomizeNPCStore(ZR_STORE_RESET);
 	OnRoundEnd(null, NULL_STRING, false);
 	Waves_MapEnd();
 	Spawns_MapEnd();
@@ -1568,7 +1571,7 @@ public void OnClientDisconnect(int client)
 	b_HudScreenShake[client] = true;
 	b_HudLowHealthShake_UNSUED[client] = true;
 	b_HudHitMarker[client] = true;
-	b_DisplayDamageHudSetting[client] = false;
+	b_DisplayDamageHudSettingInvert[client] = false;
 	f_ZombieVolumeSetting[client] = 0.0;
 }
 
@@ -1593,8 +1596,8 @@ public void OnPlayerRunCmdPre(int client, int buttons, int impulse, const float 
 #endif
 
 #if defined ZR
-static bool was_reviving[MAXTF2PLAYERS];
-static int was_reviving_this[MAXTF2PLAYERS];
+static bool was_reviving[MAXPLAYERS];
+static int was_reviving_this[MAXPLAYERS];
 #endif
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
@@ -1606,6 +1609,11 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	if(f_PreventMedigunCrashMaybe[client] > GetGameTime())
 	{
 		buttons &= ~IN_ATTACK;
+	}
+	if(f_PreventMovementClient[client] > GetGameTime())
+	{
+		buttons = 0;
+		return Plugin_Changed;
 	}
 	/*
 	Instant community feedback that T is very bad.
@@ -1697,7 +1705,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		}
 	}
 	
-	static int holding[MAXTF2PLAYERS];
+	static int holding[MAXPLAYERS];
 	if(holding[client] & IN_ATTACK)
 	{
 		if(!(buttons & IN_ATTACK))
@@ -2099,7 +2107,7 @@ public Action TF2_CalcIsAttackCritical(int client, int weapon, char[] classname,
 	RequestFrame(CheckWeaponAmmoLogicExternal, pack_WeaponAmmo);
 	
 	float GameTime = GetGameTime();
-	int WeaponSlot = TF2_GetClassnameSlot(classname);
+	int WeaponSlot = TF2_GetClassnameSlot(classname, weapon);
 
 	if(i_OverrideWeaponSlot[weapon] != -1)
 	{
@@ -2220,6 +2228,9 @@ public Action TF2_CalcIsAttackCritical(int client, int weapon, char[] classname,
 #if defined ZR
 void SDKHook_TeamSpawn_SpawnPost(int entity)
 {
+	if(!IsValidEntity(entity))
+		return;
+	
 	SDKHook_TeamSpawn_SpawnPostInternal(entity);
 }
 void SDKHook_TeamSpawn_SpawnPostInternal(int entity, int SpawnsMax = 2000000000, int i_SpawnSetting = 0, int MaxWaves = 999)
@@ -2266,7 +2277,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 	if (entity > 0 && entity <= 2048 && IsValidEntity(entity))
 	{
 		f_TimeTillMeleeAttackShould[entity] = 0.0;
-		StatusEffectReset(entity);
+		StatusEffectReset(entity, true);
 		f_InBattleDelay[entity] = 0.0;
 		b_AllowCollideWithSelfTeam[entity] = false;
 		NPCStats_SetFuncsToZero(entity);
@@ -2276,6 +2287,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 		f_GameTimeTeleportBackSave_OutOfBounds[entity] = 0.0;
 		b_ThisEntityIgnoredBeingCarried[entity] = false;
 		f_ClientInvul[entity] = 0.0;
+		i_SavedActualWeaponSlot[entity] = -1;
 #if !defined RTS
 		f_BackstabDmgMulti[entity] = 0.0;
 #endif
@@ -2333,6 +2345,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 #endif
 		i_IsWandWeapon[entity] = false;
 		i_IsWrench[entity] = false;
+		b_CanSeeBuildingValues[entity] = false;
 		i_IsSupportWeapon[entity] = false;
 		LastHitRef[entity] = -1;
 		f_MultiDamageTaken[entity] = 1.0;
@@ -2403,6 +2416,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 		i_NpcInternalId[entity] = 0;
 		b_IsABow[entity] = false;
 		b_IsAMedigun[entity] = false;
+		b_IsAFlameThrower[entity] = false;
 		b_HasBombImplanted[entity] = false;
 		i_RaidGrantExtra[entity] = 0;
 		i_IsABuilding[entity] = false;
@@ -2440,20 +2454,8 @@ public void OnEntityCreated(int entity, const char[] classname)
 		RPG_EntityCreated(entity, classname);
 		TextStore_EntityCreated(entity);
 #endif
-		b_IsAProjectile[entity] = false;
-/*		if(!StrContains(classname, "env_entity_dissolver"))
-		{
-			SDKHook(entity, SDKHook_SpawnPost, Delete_instantly);
-		}
-		else*/
-		if(!StrContains(classname, "tf_logic_arena")
-		 || !StrContains(classname, "team_control_point")
-		  || !StrContains(classname, "trigger_capture_area")
-		  || !StrContains(classname, "item_ammopack_small")
-		  || !StrContains(classname, "item_ammopack_medium")
-		  || !StrContains(classname, "item_ammopack_full")
-		  || !StrContains(classname, "tf_ammo_pack")
-		  || !StrContains(classname, "entity_revive_marker")
+		b_IsAProjectile[entity] = false; 	
+		if(!StrContains(classname, "entity_revive_marker")
 		  || !StrContains(classname, "tf_projectile_energy_ring")
 		  || !StrContains(classname, "entity_medigun_shield")
 		  || !StrContains(classname, "tf_projectile_energy_ball")
@@ -2592,6 +2594,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 		else if(!StrContains(classname, "func_respawnroomvisualizer"))
 		{
 			b_IsARespawnroomVisualiser[entity] = true;
+			b_ThisEntityIsAProjectileForUpdateContraints[entity] = true;
 		}
 		else if(!StrContains(classname, "prop_physics_multiplayer"))
 		{
@@ -2699,6 +2702,10 @@ public void OnEntityCreated(int entity, const char[] classname)
 #if defined ZR || defined RPG
 			Medigun_OnEntityCreated(entity);
 #endif
+		}
+		else if(!StrContains(classname, "tf_weapon_flamethrower")) 
+		{
+			b_IsAFlameThrower[entity] = true;
 		}
 #if defined ZR
 		else if (!StrContains(classname, "tf_weapon_particle_cannon")) 
@@ -2860,6 +2867,7 @@ public void OnEntityDestroyed(int entity)
 		{
 			LeanteanWandCheckDeletion(entity);
 			MedigunCheckAntiCrash(entity);
+			FlamethrowerAntiCrash(entity);
 #if !defined RTS
 			Attributes_EntityDestroyed(entity);
 #endif
@@ -2907,6 +2915,33 @@ void MedigunCheckAntiCrash(int entity)
 		if(IsValidClient(MedigunOwner))
 		{
 			f_PreventMedigunCrashMaybe[MedigunOwner] = GetGameTime() + 0.1;
+		}
+	}
+}
+
+void FlamethrowerAntiCrash(int entity)
+{
+	//This is needed beacuse:
+	/*
+		If a client holds m1 while the flamethrower is deleted, 
+		this can cause the effect of the flamemanager not being deleted
+		correctly, and causes a clientside flame particle that stays forever.
+	*/
+
+	if(!b_IsAFlameThrower[entity])
+		return;
+
+	int EntityLoop;
+	while((EntityLoop=FindEntityByClassname(EntityLoop, "tf_flame_manager")) != -1)
+	{
+		if(IsValidEntity(EntityLoop))
+		{
+			int Owner = GetEntPropEnt(EntityLoop, Prop_Send, "m_hOwnerEntity");
+			if(Owner == entity)
+			{
+				RemoveEntity(EntityLoop);
+				return;
+			}
 		}
 	}
 }
@@ -3016,13 +3051,6 @@ public void TF2_OnConditionAdded(int client, TFCond condition)
 	{
 		SDKCall_SetSpeed(client);
 	}
-	else if(condition == TFCond_UberBulletResist)
-	{
-		//This counts as uber in ZR!
-		TF2_AddCondition(client, TFCond_UberBlastResist, 99.0);
-		TF2_AddCondition(client, TFCond_UberFireResist, 99.0);
-		ApplyStatusEffect(client, client, "UBERCHARGED", 15.0);
-	}
 }
 
 public void TF2_OnConditionRemoved(int client, TFCond condition)
@@ -3031,12 +3059,6 @@ public void TF2_OnConditionRemoved(int client, TFCond condition)
 	{
 		switch(condition)
 		{
-			case TFCond_UberBulletResist:
-			{
-				RemoveSpecificBuff(client, "UBERCHARGED");
-				TF2_RemoveCondition(client, TFCond_UberBlastResist);
-				TF2_RemoveCondition(client, TFCond_UberFireResist);
-			}
 			case TFCond_Zoomed:
 			{
 				ViewChange_Update(client);
@@ -3063,7 +3085,7 @@ public void TF2_OnConditionRemoved(int client, TFCond condition)
 					{
 						static char classname[64];
 						GetEntityClassname(weapon_holding, classname, sizeof(classname));
-						if(TF2_GetClassnameSlot(classname) == TFWeaponSlot_Melee)
+						if(TF2_GetClassnameSlot(classname, weapon_holding) == TFWeaponSlot_Melee)
 						{
 							float attack_speed;
 						
@@ -3094,7 +3116,6 @@ stock bool InteractKey(int client, int weapon, bool Is_Reload_Button = false)
 		int entity = GetClientPointVisible(client, 100.0, _, _, vecEndOrigin); //So you can also correctly interact with players holding shit.
 		if(entity > 0)
 		{
-
 #if defined RPG
 			if(b_is_a_brush[entity]) //THIS is for brushes that act as collision boxes for NPCS inside quests.sp
 			{
@@ -3114,7 +3135,12 @@ stock bool InteractKey(int client, int weapon, bool Is_Reload_Button = false)
 			if(GetEntityClassname(entity, buffer, sizeof(buffer)))
 			{
 				if (GetTeam(entity) != TFTeam_Red)
+				{
+					if(Construction_Material_Interact(client, entity))
+						return false;
+
 					return false;
+				}
 				
 				if(Object_Interact(client, weapon, entity))
 					return true;
@@ -3128,7 +3154,6 @@ stock bool InteractKey(int client, int weapon, bool Is_Reload_Button = false)
 
 				if(Escape_Interact(client, entity))
 					return true;
-
 				//interacting with citizens shouldnt invalidate clicking, it makes battle hard.
 				if(Is_Reload_Button && !PlayerIsInNpcBattle(client) && Citizen_Interact(client, entity))
 					return false;
@@ -3190,13 +3215,6 @@ stock bool InteractKey(int client, int weapon, bool Is_Reload_Button = false)
 	return false;
 }
 #endif	// ZR & RPG
-
-/*
-public void Frame_OffCheats()
-{
-	CvarCheats.SetBool(false, false, false);
-}
-*/
 
 #if defined _tf2items_included
 public Action TF2Items_OnGiveNamedItem(int client, char[] classname, int index, Handle &item)
@@ -3401,6 +3419,7 @@ void ReviveClientFromOrToEntity(int target, int client, int extralogic = 0, int 
 		if(WasClientReviving)
 			speed = 6;
 	}
+		
 	if(medigun > 0)
 	{
 		speed = RoundToNearest(float(speed) * 0.65);
@@ -3410,6 +3429,14 @@ void ReviveClientFromOrToEntity(int target, int client, int extralogic = 0, int 
 		speed *= 2;
 	}
 
+	if(WasClientReviving)
+	{
+		int activeWeapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+		if(IsValidEntity(activeWeapon))
+		{
+			speed = RoundToNearest(float(speed) * Attributes_Get(activeWeapon, Attrib_ReviveSpeedBonus, 1.0));
+		}
+	}
 	Rogue_ReviveSpeed(speed);
 	if(WasRevivingEntity)
 	{
@@ -3434,6 +3461,7 @@ void ReviveClientFromOrToEntity(int target, int client, int extralogic = 0, int 
 			HealPointToReinforce(client, 1, 0.065);
 			i_Reviving_This_Client[client] = 0;
 			f_Reviving_This_Client[client] = 0.0;
+			Native_OnRevivingPlayer(client, target);
 		}
 		if(extralogic)
 		{
@@ -3655,6 +3683,7 @@ void PlayerHasInteract(int client, char[] Buffer, int Buffersize)
 			Format(Buffer, Buffersize, "%t","Interact With T Spray");
 		}
 	}
+	
 }
 
 
@@ -3663,7 +3692,7 @@ int CalcMaxPlayers()
 {
 	int playercount = CvarMaxPlayerAlive.IntValue;
 	if(playercount < 1)
-		playercount = MAXTF2PLAYERS - 1;
+		playercount = MAXPLAYERS - 1;
 	/*
 	if(OperationSystem == OS_Linux)
 	{
@@ -3672,4 +3701,35 @@ int CalcMaxPlayers()
 	*/
 
 	return playercount;
+}
+
+
+//This is needed as MVM breaks friendly fire.
+void TakeDamage_EnableMVM()
+{
+/*
+#if defined ZR
+	if(CheckInHud())
+		return;
+
+	if(mp_friendlyfire.IntValue == 0)
+		return;
+		
+	GameRules_SetProp("m_bPlayingMannVsMachine", true);
+#endif
+*/
+}
+void TakeDamage_DisableMVM()
+{
+/*
+#if defined ZR
+	if(CheckInHud())
+		return;
+
+	if(mp_friendlyfire.IntValue == 0)
+		return;
+
+	GameRules_SetProp("m_bPlayingMannVsMachine", false);
+#endif
+*/
 }

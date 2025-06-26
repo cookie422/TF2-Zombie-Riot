@@ -173,11 +173,11 @@ public void SeaFounder_ClotThink(int iNPC)
 		if(distance < npc.GetLeadRadius())
 		{
 			float vPredictedPos[3]; PredictSubjectPosition(npc, npc.m_iTarget,_,_, vPredictedPos);
-			NPC_SetGoalVector(npc.index, vPredictedPos);
+			npc.SetGoalVector(vPredictedPos);
 		}
 		else 
 		{
-			NPC_SetGoalEntity(npc.index, npc.m_iTarget);
+			npc.SetGoalEntity(npc.m_iTarget);
 		}
 
 		npc.StartPathing();
@@ -355,7 +355,7 @@ public Action SeaFounder_RenderTimer(Handle timer, DataPack pack)
 		return Plugin_Stop;
 	}
 
-	if(++SpreadTicks > (CurrentRound == 59 ? 24 : 8))
+	if(++SpreadTicks > (CurrentRound >= 39 ? 24 : 8))
 	{
 		SpreadTicks = (GetURandomInt() % 3) - 1;
 
@@ -610,7 +610,10 @@ public Action SeaFounder_DamageTimer(Handle timer, DataPack pack)
 			NervousLastTouch[client] = TheNavMesh.GetNavArea(pos, 70.0);
 			if(NervousLastTouch[client] != NULL_AREA && NavList.FindValue(NervousLastTouch[client]) != -1)
 			{
-				bool resist = (Building_NeatherseaReduced(client));
+				bool resist = false;
+				if(HasSpecificBuff(client, "Nethersea Antidote"))
+					resist = true;
+					
 				bool ignore = false;
 				bool Benifit = (SeaMelee_IsSeaborn(client));
 				int Active_weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");

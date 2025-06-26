@@ -293,19 +293,19 @@ methodmap RaidbossSilvester < CClotBody
 		fl_said_player_weaponline_time[npc.index] = GetGameTime() + GetRandomFloat(0.0, 5.0);
 		
 		i_RaidGrantExtra[npc.index] = 1;
-		if(StrContains(data, "wave_15") != -1)
+		if(StrContains(data, "wave_10") != -1)
 		{
 			i_RaidGrantExtra[npc.index] = 2;
 		}
-		else if(StrContains(data, "wave_30") != -1)
+		else if(StrContains(data, "wave_20") != -1)
 		{
 			i_RaidGrantExtra[npc.index] = 3;
 		}
-		else if(StrContains(data, "wave_45") != -1)
+		else if(StrContains(data, "wave_30") != -1)
 		{
 			i_RaidGrantExtra[npc.index] = 4;
 		}
-		else if(StrContains(data, "wave_60") != -1)
+		else if(StrContains(data, "wave_40") != -1)
 		{
 			i_RaidGrantExtra[npc.index] = 5;
 		}
@@ -339,19 +339,19 @@ methodmap RaidbossSilvester < CClotBody
 		}
 		else
 		{	
-			RaidModeScaling = float(ZR_Waves_GetRound()+1);
+			RaidModeScaling = float(Waves_GetRoundScale()+1);
 		}
 
 		f_TalkDelayCheck = 0.0;
 		i_TalkDelayCheck = 0;
 		
-		if(RaidModeScaling < 55)
+		if(RaidModeScaling < 35)
 		{
-			RaidModeScaling *= 0.19; //abit low, inreacing
+			RaidModeScaling *= 0.25; //abit low, inreacing
 		}
 		else
 		{
-			RaidModeScaling *= 0.38;
+			RaidModeScaling *= 0.5;
 		}
 		
 		float amount_of_people = ZRStocks_PlayerScalingDynamic();
@@ -600,7 +600,7 @@ static void Internal_ClotThink(int iNPC)
 	{
 		if(!b_RageAnimated[npc.index])
 		{
-			NPC_StopPathing(npc.index);
+			npc.StopPathing();
 			npc.m_bPathing = false;
 			npc.m_flSpeed = 0.0;
 			npc.m_bisWalking = false;
@@ -626,7 +626,7 @@ static void Internal_ClotThink(int iNPC)
 			RemoveSpecificBuff(npc.index, "Solid Stance");
 			RemoveSpecificBuff(npc.index, "Fluid Movement");
 			npc.DispatchParticleEffect(npc.index, "hightower_explosion", NULL_VECTOR, NULL_VECTOR, NULL_VECTOR, npc.FindAttachment("head"), PATTACH_POINT_FOLLOW, true);
-			NPC_StartPathing(npc.index);
+			npc.StartPathing();
 			npc.m_bPathing = true;
 			npc.m_flSpeed = 330.0;
 			npc.m_iInKame = 0;
@@ -736,7 +736,7 @@ static void Internal_ClotThink(int iNPC)
 			float vecTarget[3]; WorldSpaceCenter(npc.m_iTargetWalkTo, vecTarget );
 			npc.FaceTowards(vecTarget, 80.0);
 		}
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		npc.m_flSpeed = 0.0;
 		npc.m_flDoingAnimation = GetGameTime() + 0.1;
@@ -745,7 +745,7 @@ static void Internal_ClotThink(int iNPC)
 	{
 		int iActivity = npc.LookupActivity("ACT_MP_RUN_MELEE");
 		if(iActivity > 0) npc.StartActivity(iActivity);
-		NPC_StartPathing(npc.index);
+		npc.StartPathing();
 		npc.m_bPathing = true;
 		npc.m_flSpeed = 330.0;
 		npc.m_iInKame = 0;
@@ -779,7 +779,7 @@ static void Internal_ClotThink(int iNPC)
 	}
 	if(npc.m_flReloadDelay && npc.m_flDoingAnimation < GetGameTime(npc.index))
 	{
-		NPC_StartPathing(npc.index);
+		npc.StartPathing();
 		npc.m_bPathing = true;
 		npc.m_flSpeed = 330.0;
 		npc.m_iInKame = 0;
@@ -1050,11 +1050,11 @@ static void Internal_ClotThink(int iNPC)
 		float vPredictedPos[3]; PredictSubjectPosition(npc, npc.m_iTargetWalkTo,_,_, vPredictedPos);
 		if(flDistanceToTarget < npc.GetLeadRadius()) 
 		{
-			NPC_SetGoalVector(npc.index, vPredictedPos);
+			npc.SetGoalVector(vPredictedPos);
 		}
 		else
 		{
-			NPC_SetGoalEntity(npc.index, npc.m_iTargetWalkTo);
+			npc.SetGoalEntity(npc.m_iTargetWalkTo);
 		}
 
 		int iPitch = npc.LookupPoseParameter("body_pitch");
@@ -1166,7 +1166,7 @@ static void Internal_ClotThink(int iNPC)
 			case 4: //Cause a pillar attack, more fany and better looking elemental wand attack
 			{
 		//		npc.m_flNextRangedAttackHappening = GetGameTime(npc.index) + 0.5;
-		//		NPC_StopPathing(npc.index);
+		//		npc.StopPathing();
 		//		npc.m_bPathing = false;
 		//		npc.m_flSpeed = 0.0;
 				npc.FaceTowards(vecTarget, 99999.9);
@@ -1233,7 +1233,7 @@ static void Internal_ClotThink(int iNPC)
 			{
 				npc.m_flDoingAnimation = GetGameTime(npc.index) + 3.0;
 				npc.m_flReloadDelay = GetGameTime(npc.index) + 3.0;
-				NPC_StopPathing(npc.index);
+				npc.StopPathing();
 				npc.m_bPathing = false;
 				npc.m_flSpeed = 0.0;
 				float pos[3];
@@ -2025,7 +2025,7 @@ bool SharedGiveupSilvester(int entity, int entity2)
 						CPrintToChatAll("{gold}Silvester{default}: I REFUSE to let this happen again to us two, don't say i didnt warn you!");
 
 					i_TalkDelayCheck = 5;
-					for (int client = 0; client < MaxClients; client++)
+					for (int client = 1; client <= MaxClients; client++)
 					{
 						if(IsValidClient(client) && GetClientTeam(client) == 2 && TeutonType[client] != TEUTON_WAITING && PlayerPoints[client] > 500)
 						{

@@ -54,7 +54,7 @@ enum struct OwnedItem
 
 static ArrayList GiftItems;
 static ArrayList OwnedItems;
-static int CategoryPage[MAXTF2PLAYERS];
+static int CategoryPage[MAXPLAYERS];
 
 static int g_BeamIndex = -1;
 static int i_RarityType[MAXENTITIES];
@@ -386,7 +386,7 @@ bool Items_GiveIdItem(int client, int id, bool noForward = false)
 	{
 		static GiftItem item;
 		GiftItems.GetArray(id, item);
-		if(Native_OnGivenItem(id, item.Name))
+		if(Native_OnGivenItem(client, item.Name, id))
 		{
 			Items_GiveNamedItem(client, item.Name, true);
 			return false;

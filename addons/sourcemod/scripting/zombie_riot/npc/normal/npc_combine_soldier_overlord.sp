@@ -324,9 +324,9 @@ public void CombineOverlord_ClotThink(int iNPC)
 				TE_SetupBeamPoints(vPredictedPos, vecTarget, xd, xd, 0, 0, 0.25, 0.5, 0.5, 5, 5.0, color, 30);
 				TE_SendToAllInRange(vecTarget, RangeType_Visibility);*/
 				
-				NPC_SetGoalVector(npc.index, vPredictedPos);
+				npc.SetGoalVector(vPredictedPos);
 			} else {
-				NPC_SetGoalEntity(npc.index, PrimaryThreatIndex);
+				npc.SetGoalEntity(PrimaryThreatIndex);
 			}
 			
 			if(npc.m_flNextChargeSpecialAttack < GetGameTime(npc.index) && npc.m_flReloadDelay < GetGameTime(npc.index) && flDistanceToTarget < 160000)
@@ -343,7 +343,7 @@ public void CombineOverlord_ClotThink(int iNPC)
 				npc.AddGesture("ACT_ACTIVATE_BATON");
 				npc.m_flmovedelay = GetGameTime(npc.index) + 0.5;
 				npc.m_flJumpStartTime = GetGameTime(npc.index) + 2.0;
-				NPC_StopPathing(npc.index);
+				npc.StopPathing();
 				npc.m_bPathing = false;
 			}
 	
@@ -352,7 +352,7 @@ public void CombineOverlord_ClotThink(int iNPC)
 			//	npc.FaceTowards(vecTarget, 2000.0);
 				if(!npc.m_fbRangedSpecialOn)
 				{
-					NPC_StopPathing(npc.index);
+					npc.StopPathing();
 					npc.m_bPathing = false;
 					npc.AddGesture("ACT_PUSH_PLAYER");
 					npc.m_flRangedSpecialDelay = GetGameTime(npc.index) + 0.3;
@@ -399,7 +399,7 @@ public void CombineOverlord_ClotThink(int iNPC)
 					float WorldSpaceVec[3]; WorldSpaceCenter(npc.index, WorldSpaceVec);
 					npc.DispatchParticleEffect(npc.index, "mvm_soldier_shockwave", NULL_VECTOR, NULL_VECTOR, NULL_VECTOR, npc.FindAttachment("anim_attachment_LH"), PATTACH_POINT_FOLLOW, true);
 					
-					FireBullet(npc.index, npc.index, WorldSpaceVec, vecDir, 100.0, 150.0, DMG_BULLET, "bullet_tracer02_blue");
+					FireBullet(npc.index, npc.index, WorldSpaceVec, vecDir, 150.0, 150.0, DMG_CLUB, "bullet_tracer02_blue");
 				}
 			}
 			
@@ -481,7 +481,7 @@ public void CombineOverlord_ClotThink(int iNPC)
 	}
 	else
 	{
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		npc.m_flGetClosestTargetTime = 0.0;
 		npc.m_iTarget = GetClosestTarget(npc.index);

@@ -55,6 +55,11 @@ methodmap BaseBuilding < BarrackBody
 		func_NPCDeath[npc.index] = BaseBuilding_NPCDeath;
 		func_NPCThink[npc.index] = BaseBuilding_ClotThink;
 		func_NPCOnTakeDamage[npc.index] = BaseBuilding_ClotTakeDamage;
+		CPrintToChatAll("{crimson}%t", "Explain Construction 0");
+		CPrintToChatAll("{green}%t", "Explain Construction 1");
+		CPrintToChatAll("{green}%t", "Explain Construction 2");
+		CPrintToChatAll("{green}%t", "Explain Construction 3");
+		CPrintToChatAll("{green}%t", "Explain Construction 4");
 
 		npc.m_flSpeed = 0.0;
 		return npc;
@@ -120,12 +125,7 @@ void BaseBuilding_NPCDeath(int entity)
 	BarrackBody_NPCDeath(npc.index);
 	if(Waves_Started())
 	{
-		int endround = CreateEntityByName("game_round_win"); 
-		DispatchKeyValue(endround, "force_map_reset", "1");
-		SetEntProp(endround, Prop_Data, "m_iTeamNum", TFTeam_Blue);
-		DispatchSpawn(endround);
-		AcceptEntityInput(endround, "RoundWin");
-		Music_RoundEnd(endround);
+		ForcePlayerLoss();
 
 		CreateTimer(1.0, Timer_EverythingExplodes, _, TIMER_FLAG_NO_MAPCHANGE);
 	}

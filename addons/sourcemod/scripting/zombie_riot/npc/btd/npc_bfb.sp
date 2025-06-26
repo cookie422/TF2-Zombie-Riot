@@ -30,8 +30,7 @@ static float MoabSpeed()
 
 static int MoabHealth(bool fortified)
 {
-	float value = 130000.0;	// 200x3 + 700 RGB
-	value *= 0.5;
+	float value = 1300.0;	// 200x3 + 700 RGB
 	
 	if(fortified)
 		value *= 2.0;
@@ -49,7 +48,7 @@ static int MoabHealth(bool fortified)
 		value *= 1.0 + (CurrentRound - 79) * 0.02;
 	}
 	
-	return RoundFloat(value) + (Bloon_Health(fortified, Bloon_Ceramic) * 9);	// 104x3x3 RGB
+	return RoundFloat((value + (Bloon_HPRatio(fortified, Bloon_Ceramic) * 9.0) * Bloon_BaseHealth()));	// 104x3x3 RGB
 }
 
 void Bfb_MapStart()
@@ -212,11 +211,11 @@ public void Bfb_ClotThink(int iNPC)
 			
 			
 			float VecPredictPos[3]; PredictSubjectPosition(npc, PrimaryThreatIndex,_,_, VecPredictPos);
-			NPC_SetGoalVector(npc.index, VecPredictPos);
+			npc.SetGoalVector(VecPredictPos);
 		}
 		else
 		{
-			NPC_SetGoalEntity(npc.index, PrimaryThreatIndex);
+			npc.SetGoalEntity(PrimaryThreatIndex);
 		}
 		if(flDistanceToTarget < 20000)
 		{
@@ -254,7 +253,7 @@ public void Bfb_ClotThink(int iNPC)
 	}
 	else
 	{
-		NPC_StopPathing(npc.index);
+		npc.StopPathing();
 		npc.m_bPathing = false;
 		npc.m_flGetClosestTargetTime = 0.0;
 		npc.m_iTarget = GetClosestTarget(npc.index);
